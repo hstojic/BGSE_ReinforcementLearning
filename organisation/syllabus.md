@@ -50,8 +50,8 @@ Reinforcement learning (RL) is a model-based theory of sequential decision-makin
 
 6. Bayesian optimization and contextual bandit applications
 - Bayesian optimization  
-- GP-UCB and other variants  
-- Optimizing hyperparameters and other applications
+- Various extensions  
+- Optimizing hyperparameters application
 
 7. Temporal difference methods
 - Monte Carlo and TD(0) for policy evaluation

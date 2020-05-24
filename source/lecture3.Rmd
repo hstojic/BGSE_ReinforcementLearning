@@ -1,0 +1,977 @@
+---
+title: "Lecture 3: Multi-armed bandits"
+author: "Hrvoje Stojic"
+date: "April 29, 2020"
+header-includes:
+   - \usepackage[absolute,overlay]{textpos}
+   - \setbeamercolor{framesource}{fg=gray}
+   - \setbeamerfont{framesource}{size=\tiny}
+   - \newcommand{\source}[1]{\begin{textblock*}{8cm}(0.5cm,8.9cm)\begin{beamercolorbox}[ht=0.5cm,left]{framesource}\usebeamerfont{framesource}\usebeamercolor[fg]{framesource} Source:~{#1}\end{beamercolorbox}\end{textblock*}}
+   - \usepackage{hyperref}
+   - \usepackage{xcolor}
+   - \hypersetup{colorlinks,linkcolor={red!50!black},citecolor={blue!50!black},urlcolor={blue!80!black}}
+output: 
+  beamer_presentation:
+    theme: "boxes"
+    colortheme: "default"
+    fonttheme: "professionalfonts"
+    highlight: kate
+    slide_level: 2
+---
+
+
+```{r, knitr_options, include=FALSE}
+    
+    # loading in required packages
+    if (!require("knitr")) install.packages("knitr"); library(knitr)
+    if (!require("rmarkdown")) install.packages("rmarkdown"); library(rmarkdown)
+
+    # some useful global defaults
+    opts_chunk$set(warning=FALSE, message=FALSE, include=TRUE, echo=TRUE, cache=TRUE, cache.comments=FALSE, comment='##')
+
+    # output specific defaults
+    output <- opts_knit$get("rmarkdown.pandoc.to")
+    if (output=="html") opts_chunk$set(fig.width=10, fig.height=5)
+    if (output=="latex") opts_chunk$set(fig.width=6,  fig.height=4, 
+        dev = 'cairo_pdf', dev.args=list(family="Arial"))
+    
+```
+
+
+```{r, Setup_and_Loading_Data, echo=FALSE}
+   
+    # cleaning before starting
+    # rm(list = ls())
+
+    # setwd("/home/hstojic/Teaching/BGSE_DS_StochModOptim/source")
+
+    # rmarkdown::render("session1.Rmd", clean=TRUE, output_dir = "../handouts")
+   
+
+```
+
+
+# The roadmap
+
+<!-- 
+Introduce myself - background in economics and psychology. Came to UPF to do decision making research. I tend to approach questions from computational angle, implementing algorithms to understand them. 
+This is quite different from Gergely's approach, he is a theorist and does very different type of analysis, leading him to different questions and different insights into RL algorithms. 
+
+These are a bit strange times. You had to adapt to a change in format of the course. For us, its a new course, we will be learning what is the best way to structure the course for data science students. ANd finally, personally its a first time I'm teaching an online course, so there will be a lot of learning for myself as well. Hence, apologies in advance if this won't go as smoothly as it should.
+
+I used to teach Bayesian optimization in the data science master, as a part of Topics in Data science course. Within that I was giving intro to RL and classical bandits as a way of building up for CMABs and BO - BO was the main focus of the course with the aim of understanding and applying state-of-the-art algorithms for optimizing hyperparameters. Now we are having a stand alone section on classical bandits with their own applications, and similarly for contextual bandits.
+
+-->
+
+
+## The roadmap
+
+. . . 
+
+- Multi-armed bandits (MAB) - 2 lectures   
+    + Naive classics: $\epsilon$-greedy, Softmax
+    + Optimism in the face of uncertainty with Upper confidence bound (UCB) 
+    + Bayesian bandits with Thompson sampling  
+    + Overview of extensions    
+    + Application: A/B testing  
+    + Problem set 1  
+
+. . . 
+
+- Contextual bandits (CMAB) - 2 lectures  
+    + Linear models with UCB   
+    + Introduction to Gaussian processes (GP) 
+    + Bayesian optimization with GP-UCB  
+    + Overview of extensions  
+    + Application: Optimizing hyperparameters   
+    + Problem set 2  
+
+<!-- 
+-->
+----
+
+
+
+## A/B testing
+
+\center
+\includegraphics[width=\textwidth]{figs/ABtesting.png}
+
+\source{\href{https://en.wikipedia.org/wiki/A/B_testing}{Wikipedia}}
+
+<!-- 
+
+-->
+----
+
+
+## Recommender systems and ad placement
+
+\center
+\includegraphics[width=0.9\textwidth]{figs/criteo.png}
+
+\source{\href{https://www.criteo.com}{Criteo webpage}}
+
+<!-- 
+
+-->
+----
+
+
+
+## AutoML and hyperparameter tuning
+
+\includegraphics[width=0.5\textwidth]{figs/Snoek.png}\hfill
+\includegraphics[width=0.5\textwidth]{figs/Bergstra.png}
+\source{Snoek et al 2012; Bergstra et al 2011}
+
+. . .
+
+- CIFAR 10: state of the art was test error of 18%, they achieved 14.98%  
+- MNIST rotated background images
+
+<!-- 
+
+Snoek
+- conv nets, 3 layer, 9 hypers
+- CiFAR 10, 60000 32x32 colour images in 10 classes, with 6000 images per class
+- at that time state of the art was 18% test error data, they achieved 14.98%
+
+Bergstra 2011
+- MNIST rotated background images, dataset (MRBI), 
+- In another dataset (convex),
+
+-->
+----
+
+
+## Bayesian optimization going mainstream
+
+\center
+\includegraphics[width=\textwidth]{figs/sigopt.png}
+\source{\href{https://www.sigopt.com}{SigOpt webpage}}
+
+<!-- 
+
+-->
+----
+
+
+## Google Cloud AutoML for computer vision
+
+\center
+\includegraphics[width=\textwidth]{figs/googleautoml.png}
+\source{\href{https://cloud.google.com/automl/}{Google AutoML webpage}}
+
+<!-- 
+
+-->
+----
+
+
+
+## Optimizing parameters of combinatorial optimization software
+
+\center
+\includegraphics[width=0.6\textwidth]{figs/salesman.png}
+
+\source{\href{https://en.wikipedia.org/wiki/Travelling_salesman_problem}{Wikipedia}}
+
+<!-- 
+
+Mixed Integer Programming Solvers 
+- 76 pars, 
+- take a long time
+- schedulers, Production planning
+- IBM ILOG C PLEX —the most widely used commercial MIP solver
+
+-->
+----
+
+
+
+## Preference learning and interactive user interfaces
+
+\center
+\includegraphics[width=0.9\textwidth]{figs/netflix.png}
+
+\source{\href{https://www.netflix.com}{Netflix webpage}}
+
+<!-- 
+preference learning 
+- Modern market research
+- one could think of actively querying ppl's preferences to customize the recommendations 
+    - e.g. netflix, instead of collabroative filtering, what works for most people 
+    - or financial advisor for making stock investments 
+-->
+----
+
+
+
+## References 
+
+- Bandits
+    + Sutton, R., & Barto, A. (2018). Introduction to Reinforcement Learning (book free of charge: [www.incompleteideas.net/sutton/book/the-book.html](http://www.incompleteideas.net/sutton/book/the-book.html))  
+    + Lattimore, T., & Szepesvári, C. (2020). Bandit algorithms. (book free of charge: [banditalgs.com/](https://banditalgs.com/))  
+    + Szepesvári, C. (2010). Algorithms for Reinforcement Learning. 
+    + D. Silver's lectures (videos and slides: [www0.cs.ucl.ac.uk/staff/D.Silver/web/Teaching.html](http://www0.cs.ucl.ac.uk/staff/D.Silver/web/Teaching.html))
+- Gaussian Processes
+    + Rasmussen, C. E., & Williams, C. K. I. (2006). Gaussian processes for machine learning. MIT Press. (book free of charge: [www.gaussianprocess.org/gpml/](http://www.gaussianprocess.org/gpml/))  
+    + Carl Rasmussen's lectures ([videos](http://videolectures.net/carl_edward_rasmussen/)) 
+    + Nando De Freitas' lectures (videos and slides: [www.youtube.com/user/ProfNandoDF/videos](https://www.youtube.com/user/ProfNandoDF/videos))
+
+----
+
+
+## References 
+
+- Contextual bandits, Bayesian optimization  
+    + Auer, P., Cesa-Bianchi, N., & Fischer, P. (2002). Finite-time analysis of the multiarmed bandit problem. Machine learning, 47(2-3), 235-256  
+    + Li, L., Chu, W., Langford, J., & Schapire, R. E. (2010). A contextual-bandit approach to personalized news article recommendation. In Proceedings of the 19th international conference on World wide web (pp. 661-670).  
+    + Snoek, J., Larochelle, H., & Adams, R. P. (2012). Practical Bayesian Optimization of Machine Learning Algorithms. Advances in Neural Information Processing Systems, 2951-2959.  
+    + Shahriari, B., Swersky, K., Wang, Z., Adams, R. P., & de Freitas, N. (2016). Taking the Human Out of the Loop: A Review of Bayesian Optimization. Proceedings of the IEEE, 104(1), 148–175.  
+    
+
+----
+
+
+
+## Software
+
+- Python libraries  
+    + [RLlib](https://ray.readthedocs.io/en/latest/rllib.html)  
+    + [Tensorflow agents](https://github.com/tensorflow/agents)    
+    + scikit-learn, auto-sklearn  
+    + Hyperopt (Bergstra et al., 2011)  
+    + Spearmint (Snoek et al., 2014)
+- R packages
+    + GPfit, gptk, FastGP
+    + rBayesianOptimization  
+    + DiceOptim (Roustant et al., 2012)
+- Matlab  
+    + GPML (Rasmussen)  
+- C++  
+    + BayesOpt (Martinez-Cantin, 2014)  
+- Java  
+    + SMAC (Hutter et al., 2011)  
+    + AutoWEKA
+
+----
+
+
+## Practicalities 
+
+- Contact: 
+    - hrvoje.stojic_youknowwhat_protonmail.com  
+    - Office hours by video calls
+
+- Materials:  
+    - Videos and slides will be uploaded to Box  
+    - In addition, I will have the whole course posted on [Github](https://github.com/hstojic/BGSE_ReinforcementLearning), where you will have access to the source code  
+
+- Evaluation:  
+    + No exam  
+    + Individual problem sets 50% and group projects 50%
+    + We are still deciding on the exact form of the group projects, we will let you know the details soon!
+
+<!-- 
+
+Contact
+- you can get in touch with me on email whenever you want, I'll do my best to help you if I can, and we can arrange virtual office hours anytime
+- please feel free to get in touch, such opporutnities is one of the best things you can get from a master program like this and dont hesitate to use it, we are here to help you as much as we can with achieving your goals
+- this includes queries that are not necessarily strictly related to the course - whether its a question about topics for the theses, PhDs, industry jobs, and so on  
+
+Evaluation
+- my individual problem sets will be coding based, i want you to get know-how and some hand on experience with bandits
+- we are still deciding on exact options for the group project - we will post them soon so that you are able to start working on them early on
+
+-->
+----
+
+
+
+
+
+# Multi-armed bandits
+
+
+## A subclass of reinforcement learning problems
+
+\center
+\includegraphics[width=0.6\textwidth]{figs/gergely_RLproblem.png}
+
+. . . 
+
+Two key challenges of RL:  
+1. Dealing with long-term effects of actions  
+2. Dealing with uncertainty due to partial feedback  
+
+<!-- 
+
+A quick reminder of the RL problem
+- the agent interacts with the environment...
+
+As Gergely already pointed out, there are tho key challenges of RL
+- these are simultaenously two features that also distinguish it from other machine learning problems, such as supervised and unsupervised learning
+
+Bandit theory tries to deal with the 2nd problem
+- it does that by focusing on partial feedback and eliminating the complexity emanating from long-term effects of actions
+- essentially we cross out change of state, there is a single state now
+- we will see there are bandit extensions where they creep in some form, but still impoverished
+- e.g. we will see restless bandits where state changes, however it changes on its own accord, rather than reacting on agent actions
+- or contextual bandits where there is a change of state, but its usually randomly drawn
+
+-->
+----
+
+
+## Partial feedback -> Exploration exploitation problem
+
+. . . 
+
+- Acting involves a fundamental trade-off:  
+    + **Exploitation**: Make the best decision given current information
+    + **Exploration**: Gather more information  
+
+. . . 
+
+- The best long-term strategy may involve short-term sacrifices  
+
+. . . 
+
+- Main idea is to gather just enough information to make the best decisions, that is, accumulate as much rewards as possible  
+
+. . .  
+
+- Examples:  
+    + Going to a favourite restaurant (**exploitation**), or try a new restaurant (**exploration**)  
+    + Show the most successful ad (**exploitation**), or show a new ad (**exploration**)
+
+<!-- 
+
+Problem unique to RL
+- arises when you need to act
+- what are the main ingredients?
+    - partial feedback 
+    - stochastic output
+
+-->
+----
+ 
+
+
+## Formulation
+
+\center
+\includegraphics[width=0.3\textwidth]{figs/octopus.jpeg}
+
+- A tuple $\langle \mathcal{A}, \mathcal{R} \rangle$  
+- $\mathcal{A}$ is a (stationary) set of $K$ actions/arms  
+- $\mathcal{R}^a(r) = P[r|a]$ is an unknown but stationary probability distribution over rewards  
+- At each step $t$ the agent selects an action $a_t \in \mathcal{A}$  
+- The environment generates a reward $r_t \sim \mathcal{R}^{a_t}$  
+- The goal is to maximise cumulative reward $\sum^\tau_{t=1} r_t$
+
+
+<!-- 
+
+- its a single state, no transition function!
+
+- No delayed rewards, credit assignment problem, agents gets a reward immediately
+- Isolates EETO, with no function learning problem,
+- step before CMAB that has FL problem, correlated arms
+
+- this is a classical formulation of a k-armed bandit problem, there are many many variants of the problem that were devised to potentially capture some realistic scenarios better and to derive more suitable algorithms
+
+- important bit here is that prob distributions are stationary, this assumption allows us to put more structure on the problem and derive more sophisticated policies
+
+-->
+----
+
+
+
+## Regret: measure of performance
+
+. . . 
+
+- The **action value** is the expected reward for action $a$, $Q(a) = E[r|a]$  
+
+. . . 
+
+- The **optimal value** is $V^* = Q(a^*) = \textrm{max}_{a \in \mathcal{A}} Q(a)$  
+
+. . . 
+
+- The **cumulative regret** is the total opportunity loss $L_t = E[\sum^t_{\tau=1} V^* - Q(a_{\tau})]$  
+
+. . . 
+
+- Regret can be expressed in terms of counts and gaps:  
+    + The count $N_t(a)$ is number of selections for action $a$  
+    + The gap $\Delta_a$ is the difference in value between action $a$ and optimal action $a^*$, $\Delta_a = V^* - Q(a)$  
+    + The cumulative regret, stated differently: $$L_t = \sum_{a \in \mathcal{A}} E[N_t(a)] (V^* - Q(a)) = \sum_{a \in \mathcal{A}} E[N_t(a)] \Delta_a$$  
+
+<!-- 
+
+- before we continue, we will define how we measure the success of an agent
+
+- first we will define value of performing an action
+
+- Minimising total regret
+    - THINKING TIME! what is a problem with this formulation?
+    - this is of course available only to you as an external observer with a complete insight into the system
+    - in practice, you won't have access to ground truth in bandit scenarios
+    - what you will rely on is whether this kind of problem formulations is close enough fit to the problem at hand, so that you can have some degree of confidence that these algorithms will work well
+    - why aim for the best option? is that good?
+
+- Counts and gaps - view that will become very useful later on
+    - nonparametric
+    - fnc of gaps and counts
+    - good algo ensures small N for large gaps
+    - problem: gaps are not known!
+ -->
+----
+
+
+## Agents
+
+> 1. Learning  
+>     - Action values are initially unknown   
+>     - Estimating the expected action value: $\hat{Q}_t(a)$
+>     - In our stationary bandit problem, after taking an action and observing a reward, we could simply update our estimates by $$ \hat{Q}_t(a) = \frac{1}{N_t(a)} \sum^t_{t'=1} r_{t'} \mathbf{1}(a_{t'}=a)$$ or $$ \hat{Q}_{t}(a) = \hat{Q}_{t-1}(a) + \frac{1}{N_t(a)} (r_t - \hat{Q}_{t-1}(a))$$  
+>     - Note that $\hat{Q}_t(a)$ have to be initialized in some way  
+
+> 2. Choice    
+>     - Actions with greatest estimated value are called **greedy** actions  
+>     - If you select one of greedy actions we say you are **exploiting** your knowledge, otherwise you are **exploring** 
+>     - A policy, $\pi(a)$, given estimates of action values, $\hat{Q}_t(a)$, gudies actions 
+
+<!-- 
+
+popular online form 
+- I included it here bcs you see it everyewhere
+- saves memory while doing the same thing
+- usually its in form where 1/N is a fixed learning rate
+- strictly speaking its not an optimal learning rule for a stationary problem
+- THINKING TIME! why not?
+- this is bcs fixed learning rate actually puts more weight on more recent evidence, which is the reason why its fairly popular 
+- ideally you should decrease learning rate the closer you are to the true expected value, same as in gradient descent for example
+- it can perform reasonably well in nonstationary cases as well, since it forgets earlier samples that might become irrelevant over time
+- but it needs additional assumptions to guarantee convergence to true values:
+    1. sum of steps = infinity, to overcome initial conds and random fluct
+    2. sum of squared steps < inf, steps eventually become small enough
+    - for fixed step 2. is violated
+
+how do you solve the EETO?
+- THINKING TIME!
+- how would you decide when to exploit you knowledge, go for max, and when to explore and gather more info?
+- come up with some strategies for yourself and why do you think
+
+
+> To start with, think about a trivial **greedy** policy:  
+$$a_t^* = \textrm{argmax}_{a \in \mathcal{A}} \hat{Q}_t(a)$$  
+
+now, to get you started, think about a very naive approach, imagine a policy that always exploits knowledge
+- THINKING TIME!
+- what makes it a bad policy
+- in particular, how would you describe the regret of that policy?
+
+what is performance of a greedy policy
+- in some worlds you might immediately stumble on a good option, your estimates would be higher than for the other options (if you are not unlucky), and your regret would flat line
+- however in most worlds you would be stuck in a suboptimal arm and your regret would be the same in every round
+- hence, regret of a greedy policy is linear
+- this seems like a bad policy, can we do better
+ -->
+
+----
+
+
+
+## Can we do better with random exploration? 
+
+> - Main idea is to add some noise to a greedy policy
+
+> - Popular examples   
+>     + **$\epsilon$-greedy**: With probability $1 - \epsilon$ select $a_t^* = \textrm{argmax}_{a \in \mathcal{A}} \hat{Q}_t(a)$, with probability $\epsilon$ select a random action  
+>     + **Softmax**: $P(a_t=a)=\frac{\exp(\hat{Q}_t(a)/\tau )}{\sum_{a'=1}^{K}\exp(\hat{Q}_t(a')/\tau )}$
+
+> - How would these policies perform?  
+>     + In the limit all options would be visited infinitely many times  
+>     + By the law of large numbers, $\hat{Q}_t(a) \approx Q(a)$  
+>     + I.e agents would identify the optimal action value, $V^*$ 
+
+<!-- 
+
+softmax is a bit more sophisticated, anmount of noise depends on relative differences between action values
+
+performance
+- policies would identify the optimal arm
+- is that good enough? or, how long would they take?
+- these are asymptotic guarantees, not necessarily practical 
+
+-->
+----
+
+
+
+## Rewards and % optimal actions 
+
+. . . 
+
+\center
+\only<1>{\includegraphics[width=\textwidth]{figs/10armed_testbed.png}}
+\only<2>{\includegraphics[width=0.8\textwidth]{figs/10armed_egreedy.png}}
+
+\source{Sutton \& Barto 2018}
+
+<!-- 
+
+now, what would regret look like for these policies?
+- THINKING TIME!
+
+-->
+----
+
+
+
+## Linear regret of random exploration
+
+. . . 
+
+\center
+\includegraphics[width=0.8\textwidth]{figs/linearregret.pdf}
+
+
+<!-- 
+
+THINKING TIME! Why still linear??
+
+epsilon greedy 
+- explores forever
+- does not lock itself, but still linear regret
+
+softmax
+- does the same, if temperature parameter is fixed
+
+slopes are different though, eGreedy and SOftmax likely have lower slopes
+
+how come they are so popular? 
+- if you read Sutton and Barto, these are the only exploration policies you will find
+- their rationale is that many realistic examples are not stationary and it is not known whether they satisfy strong assumptions for which we have nice sophisticated exploration policies
+- so they care about balancing at all, not exactly how
+- kinda correct, its not easy to transfer bandit algos to full RL
+- even if the environment is fully stationary, in full RL whenever policy changes this changes the reward prob distribution, making the problem nonstationary
+
+that is, they dont take into account stationarity of the problem
+
+-->
+----
+
+
+## Sublinear regret 
+
+. . .
+
+> - Is it possible with random exploration?  
+
+> - Decaying $\epsilon_t$-greedy (Auer, Cesa-Bianchi, Fischer, 2002)  
+>     + Pick a decay schedule for $\epsilon_1$, $\epsilon_2$, ... e.g. $\epsilon_t = \textrm{min} \{1, \frac{c|\mathcal{A}|}{\textrm{min}_a \Delta_a t}\}$  
+>     + Has logarithmic asymptotic total regret, but assumes knowing the gap 
+
+> - There are similar formulations for decaying temperature in Softmax  
+
+> - These algorithms can achieve very good performance  
+> - But these are heuristic approaches and it is usually difficult to tune the decay
+
+<!-- 
+
+is sublinear possible? how could you modify these policies to achieve sublinear regret? fairly intuitive solution?
+- THINKING TIME! 
+
+- decaying epsilon greedy
+    - use counts - proxy for CI (UCB)
+    - log asymptotic regret
+- decaying temperature parameter in softmax
+
+- however, these are not principled algorithms
+- more like heuristic hacks that can work in practice
+- this leads to difficulties in tuning the decay, it has to be done for each different environment etc
+
+before continuing, we will have a brief diversion to gradient bandit algorithms, which also have a sublinear regret
+
+-->
+----
+
+
+
+## Brief diversion into gradient bandit algorithms
+
+> - Using action value estimates to guide actions is not the only game in town  
+> - We can formulate **preference** for an action, $H_t(a)$, which has no direct relation to expected reward  
+
+> - Actions are selected according to a softmax distribution with respect to relative differences in preferences $$\pi_t(a) = P(a_t=a)=\frac{\exp(H_t(a))}{\sum_{a'=1}^{K}\exp(H_t(a'))}$$
+
+> - Preferences are updated as follows $$H_{t+1}(a_t) = H_{t}(a_t) + \alpha(r_t - \bar{r}_t)(1 - \pi_t(a_t))$$ and  $$H_{t+1}(a) = H_{t}(a) - \alpha(r_t - \bar{r}_t)\pi_t(a) \; \forall a \neq a_t$$  
+>     + where $\alpha > 0$ and $\bar{r}_t \in R$ is average over all the rewards   
+>     + and initial preferences set to $H_{1}(a) = 0$  
+
+> - Advantages of this formulation
+>    + Can generate deterministic actions  
+>    + No temperature parameter tuning  
+
+<!-- 
+
+as we saw in softmax, what really matters in that one is relative difference in action values 
+- we can go a step further and directly learn these
+
+learning part is important
+- r bar acts as a baseline
+- if reward of selected action is higher than the baseline then probability increases, while it decreases for all other actions
+
+what would be some of the advantages?
+- THINKING TIME!
+- hint: note that there is no temperature parameter anymore, why is that? 
+- THINKING TIME!
+- preference is not bound by rewards, so relative differences can continue increasing
+- in other words, we can get deterministic
+
+this is a preview of policy gradient methods 
+- this preference is also often colled advantage
+- they are becoming increasingly popular, bcs they perform very well
+- they can deal with continuous action spaces more easily
+-->
+----
+
+
+
+## Gradient bandit algorithm performance
+
+. . . 
+
+\center
+\includegraphics[width=\textwidth]{figs/10armed_gradient.pdf}
+
+\source{Sutton \& Barto (2018)}
+
+
+<!-- 
+they perform quite well
+and actually they achieve sublinear regret
+-->
+----
+
+
+
+## Lower bound on regret
+ 
+. . . 
+
+> - Asymptotic total regret is at least logarithmic in number of steps (Lai & Robbins, 1985) $$\textrm{lim}_{t \to \infty} \ge \textrm{log} t \sum_{a|\Delta_a > 0} \frac{\Delta_a}{KL(\mathcal{R}^a \parallel \mathcal{R}^{a^*})}$$
+
+> - $\textrm{log} t$ is the important bit, the second term is a constant, roughly task difficulty    
+>     + KL divergence says how similar the reward distributions of two arms are
+>     + The difference in expected rewards between the arms is described by the gap, $\Delta_a$
+
+
+<!-- 
+
+you might wonder whether we have a clue on how well algorithms can do in these type of problems
+
+glad you asked, there is actually a lower bound on regret for mab!
+- we want to push the algos closer to that bound
+
+KL divergence
+- indicates the difficulty of the problem, similarity between the distributions
+- Hard problems have similar-looking arms with different means
+
+there are various extensions of this bound, depending on finer details of the bandit problem, e.g. whether you assume Bernoulli distribution for rewards etc
+
+-->
+----
+
+
+
+## Optimism in the face of uncertainty
+
+. . .
+
+- Exploration is needed because there is always uncertainty about the accuracy of the action value estimates.  
+- This suggests we could exploit information about uncertainty!
+
+. . .
+
+\center
+\includegraphics[width=\textwidth]{figs/posteriors.png}
+
+. . . 
+
+- Optimistic initialization and fixed uncertainty bonus approaches are based on the same principle
+
+<!-- 
+
+If you think more deeply, why is exploration needed?
+Because there is always uncertainty about the accuracy of the action value estimates.
+- Random exploration takes into account only estimates of expected rewards, but not uncertainty.
+- For example, if you have two options that are close to the best one and seem to have equal value, but you are more uncertain about one than the other, which one would you explore?
+- THINKING TIME!
+- I hope the answer is uncertain one...why? bcs you gain more information!
+- so, intuitively, this suggests we can use info about uncertainty
+
+This is best illustrated with a picture. Imagine your agent has access to a posterior distribution of estimated expected reward for each option.
+
+Based on this information, which action should we pick?
+- The more uncertain we are about an action-value
+- The more important it is to explore that action
+- It could turn out to be the best action
+
+This is essentially the intuition behind Upper Confidence Bounds (UCB), a very popular algorithm of this class. 
+Instead of deciding on the basis of estimated reward alone, it combines mean with upper part of the confidence interval.
+- using this image, how it would look like?
+
+You might encounter optimistic initialization or fixed uncertainty bonus
+- founded on this principle as well
+- add a bonus on top of the estimated action values, to make it seem like it has a lot of informational value
+- encourages systematic exploration early on, proxy for everything is uncertain, has high informational value until you unlearn it
+
+Approaches such as these tend to improve performance
+- can you already see why is this still not necessarily optimal?
+- THINKING TIME!
+- the title is a give away :)
+- for example, how would such algorithms behave if there were 10 rounds or 1000 rounds? 
+- same right?!
+
+-->
+----
+
+
+
+## Upper Confidence Bounds (UCB)
+
+. . . 
+
+> - The main principle
+>     - Estimate an upper confidence $\hat{U}_t(a)$ for each action value, such that $Q(a) \le \hat{Q}_t(a) + \hat{U}_t(a)$ with high probability
+>     - Select action maximising Upper Confidence Bound (UCB) $$a_t = \textrm{argmax}  \hat{Q}_t(a) + \hat{U}_t(a)$$  
+
+> - UCB1 algorithm (Auer et al, 2002) $$a_t = \textrm{argmax}_{a \in \mathcal{A}}  \hat{Q}_t(a) + \sqrt{\frac{2 \textrm{log} t}{N_t(a)}}$$
+
+>     + Each arm is pulled once to initialize action values, and algorithm is applied from then onwards
+
+<!-- 
+
+OK, so lets take a look at the details of the UCB algorithm
+
+$Q(a) \le \hat{Q}_t(a) + \hat{U}_t(a)$
+- this expresion puts an upper bound on possible value of an action
+
+How do you get info about uncertainty?
+- THINKING TIME!
+
+Counts - 
+- A distribution free proxy for how certain you are about your Q values  
+- With UCB we see more why it is so
+- very little prior knowledge! no need to assume a distribution
+
+This depends on the number of times N(a) has been selected
+- Small N t (a) ⇒ large Û t (a) (estimated value is uncertain)
+- Large N t (a) ⇒ small Û t (a) (estimated value is accurate)
+- if you stop choosing it, uncertainty terms increases, but more slowly
+
+Assumes...
+- t goes to infinity
+- nothing to tune 
+- no assumptions, works for any distribution
+- so originally a frequentist version, but we can have a probabilistic model that estimates the uncertainty directly, not using counts etc  
+    - not necessarily good, wrong prior can hurt...
+-->
+----
+
+
+
+## UCB1 derivation
+
+. . .
+
+> - Hoeffding's Inequality
+>     + Let $X_1,..., X_t$ be IID random variables in $[0,1]$, and let $\bar{X}_t = \frac{1}{t} \sum^t_{\tau=1} X_{\tau}$ be the sample mean. Then  $$P[E[X] > \bar{X}_t + u] \le e^{-2tu^2}$$
+
+> - When applied to bandit setting, conditioned on arm $a$, $P[Q(a) > \hat{Q}_t(a) + U_t(a)] \le e^{-2N_t(a)U_t(a)^2}$ 
+
+> - Solving for $U_t(a)$, $U_t(a) = \sqrt{\frac{-\textrm{log} p}{2N_t(a)}}$
+>     - As $t \to \infty$ we want a tendency to select the optimal action, so we reduce $p$ as a function of time, e.g. $p = t^{-4}$
+>     - We arrive at $$U_t(a) = \sqrt{\frac{2 \textrm{log} t}{N_t(a)}}$$
+
+<!-- 
+
+there are various variants, whole family, using slightly different bounds
+- Chernoffs, Azuma, ...
+
+-->
+----
+
+
+
+## UCB performance
+
+
+\center
+\includegraphics[width=\textwidth]{figs/10armed_ucb.pdf}
+
+\source{Sutton \& Barto (2018)}
+
+<!-- 
+
+this is without optimization 
+- % optimal arm is not necessarily the best measure
+- it performs way better in terms of regret
+
+-->
+----
+
+
+
+## UCB performance
+
+\center
+\includegraphics[width=\textwidth]{figs/UCBcomparison.png}
+
+\source{Auer, P., Cesa-Bianchi, N., \& Fischer, P. (2002). Finite-time analysis of the multiarmed bandit problem. Machine Learning, 47, 235-256.}
+
+<!-- 
+
+et-greedy does quite well in many scenarios, see Auer 2002
+
+-->
+----
+
+
+## Bayesian bandits
+
+. . . 
+
+- So far we have made very few assumptions about the reward distribution $R$  
+
+. . . 
+
+- With Bayesian approach 
+    + We can exploit our prior knowledge of rewards, $P[R]$
+    + We get full posterior distributions of rewards $P[R|h_t]$
+
+. . . 
+
+- Use posterior instead of counts to guide exploration
+    + Bayesian UCB, $a_t = \textrm{argmax} \mu_a + \beta \sigma_a$
+    + Probability matching, selects action $a$ according to probability that $a$ is the optimal action, $$\pi(a|h_t) = P[Q(a) > Q(a'), \forall a' \neq a | h_t]$$
+
+
+. . . 
+
+- Wrong distribution assumption and priors might cause issues.
+
+<!-- 
+
+There are other ways to get uncertainty information!
+By turning to Thomas Bayes :)
+
+A probabilistic treatment of the problem 
+
+Probability matching naturally trades off, probability that it is optimal reflects uncertainty as well!
+- Difficult to compute for larger number of arms 
+- But very easy to sample!
+
+-->
+
+----
+
+
+## Parametric Bayesian approach: Beta-Bernoulli bandit
+
+. . . 
+
+> - A generic probabilistic model parametrized by $\mathbf{w}$, with $\mathcal{D}$ denoting the data
+> - We can express our prior beliefs about the parameter values through $P[\mathbf{w}]$  
+> - Posterior is then obtained by applying the Bayes rule, $$P[\mathbf{w}|\mathcal{D}] = \frac{P[\mathcal{D}|\mathbf{w}]P[\mathbf{w}]}{P[\mathcal{D}]}$$
+> - Consider the MAB version where reward distribution of each arm follows Bernoulli distribution with unknown parameter $p \in (0,1)$ with rewards, $r \in {0,1}$   
+> - Reward of each arm is determined by function $f$ that takes index of an arm $a \in 1,...,K$ and returns parameter $p_a$  
+> - We can fully describe $f$ with parameter $\mathbf{w} \in (0,1)^K$ so that $f_{\mathbf{w}}(a)=w_a$  
+> - Observations are collected in $\mathcal{D}_t = \{(a_{\tau}, r_{\tau})\}_{\tau}^t$ as a set of tuples, where $a_{\tau}$ identifies the arm and $r_{\tau}$ is the reward
+
+<!-- 
+Bernoulli bandit, a good match for clinical trials and A/B testing
+- K drugs and we wish to measure the efficacy of the tratiment (prob of a successful cure)  
+- A/B testing
+-->
+----
+
+
+## Thompson Sampling for Beta-Bernoulli MAB problem
+
+. . . 
+
+- Classical choice for the prior is a conjugate to the Bernoulli likelihood, Beta distribution $$P[\mathbf{w}|\alpha,\beta] = \prod^K_{a=1} \textrm{Beta}(w_a|\alpha,\beta)$$
+
+. . . 
+
+- With such conjugate prior we can efficiently compute the posterior, $$P[\mathbf{w}|\mathcal{D}] = \prod^K_{a=1} \textrm{Beta}(w_a|\alpha + n_{,1}, \beta + n_{a,0})$$ 
+    + $n_{,1}$ is a count of 1 outcomes whenever for arm $a$ 
+    + $n_{a,0}$ is a count of 0 outcomes whenever for arm $a$ 
+
+. . . 
+
+- Thompson sampling (Thompson, 1933; Chapelle, Li, 2010)  
+    + Sample $\mathbf{w}'$ from each posterior and then maximize, $$a_{t+1} = \textrm{argmax}_a f_{\mathbf{w}'}(a), \textrm{where } \mathbf{w}' \sim P[\mathbf{w}|\mathcal{D}_t]$$  
+    + Thompson sampling achieves Lai and Robbins lower bound!  
+
+<!-- 
+
+\alpha,\beta - pseudocounts in Beta
+
+Thompson 
+- here it is possible to analytically compute the choice probabilities, for limited K  
+- Also called posterior sampling
+
+Parametric solution to MAB, importantly, uses the uncertainty
+
+We could have written this without invoking function f, but wanted to parat
+
+Benefits of the Thompson sampling
+1. only the prior, No free parameters   
+2. Naturally trading off exploration and exploitation - exploring only likely arms
+3. very fast! can be important, e.g. in ad placement Criteo is having auctions and needs to serve things while the webpage loads, needs to respond in ms
+4. great for batch updates and when rewards are a bit delayed - bcs it draws samples, its not going to take the same samples (a combo of decision noise and informational value)
+
+Disadvantages 
+- when sequence of steps, as in MDP, then due to its randomess that it adds in each step there is no consistency!
+
+-->
+
+----
+
+
+
+## Algorithm & Example
+
+\includegraphics[width=0.55\textwidth]{figs/betabernoulli_algo.png}\hfill
+\includegraphics[width=0.45\textwidth]{figs/betabernoulli.png}
+
+\source{Shahriari, B., Swersky, K., Wang, Z., Adams, R. P., \& de Freitas, N. (2016). Taking the Human Out of the Loop: A Review of Bayesian Optimization. Proceedings of the IEEE, 104(1), 148-175.}
+
+<!-- 
+
+-->
+
+----
+
+
+## Thompson sampling performance
+
+\center
+\includegraphics[width=0.8\textwidth]{figs/figure1_epsilon01_K100.pdf}
+
+
+<!-- 
+
+-->
+
+----
+

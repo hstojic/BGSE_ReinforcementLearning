@@ -1,0 +1,1078 @@
+---
+title: "Lecture 5: Contextual multi-armed bandits"
+author: "Hrvoje Stojic"
+date: "May 15, 2020"
+header-includes:
+   - \usepackage[absolute,overlay]{textpos}
+   - \setbeamercolor{framesource}{fg=gray}
+   - \setbeamerfont{framesource}{size=\tiny}
+   - \newcommand{\source}[1]{\begin{textblock*}{8cm}(0.5cm,8.9cm)\begin{beamercolorbox}[ht=0.5cm,left]{framesource}\usebeamerfont{framesource}\usebeamercolor[fg]{framesource} Source:~{#1}\end{beamercolorbox}\end{textblock*}}
+   - \usepackage{hyperref}
+   - \usepackage{xcolor}
+   - \hypersetup{colorlinks,linkcolor={red!50!black},citecolor={blue!50!black},urlcolor={blue!80!black}}
+   - \usepackage{breqn}
+output: 
+  beamer_presentation:
+    theme: "boxes"
+    colortheme: "default"
+    fonttheme: "professionalfonts"
+    highlight: kate
+    slide_level: 2
+---
+
+
+```{r, knitr_options, include=FALSE}
+    
+    # loading in required packages
+    if (!require("knitr")) install.packages("knitr"); library(knitr)
+    if (!require("rmarkdown")) install.packages("rmarkdown"); library(rmarkdown)
+
+    # some useful global defaults
+    opts_chunk$set(warning=FALSE, message=FALSE, include=TRUE, echo=TRUE, cache=TRUE, cache.comments=FALSE, comment='##')
+
+    # output specific defaults
+    output <- opts_knit$get("rmarkdown.pandoc.to")
+    if (output=="html") opts_chunk$set(fig.width=10, fig.height=5)
+    if (output=="latex") opts_chunk$set(fig.width=6,  fig.height=4, 
+        dev = 'cairo_pdf', dev.args=list(family="Arial"))
+    
+```
+
+
+```{r, Setup_and_Loading_Data, echo=FALSE}
+   
+    # cleaning before starting
+    # rm(list = ls())
+
+    # setwd("/home/hstojic/Teaching/BGSE_DS_StochModOptim/source")
+
+    # rmarkdown::render("session3.Rmd", clean=TRUE, output_dir = "../handouts")
+   
+
+```
+
+
+
+# Contextual Multi-armed Bandit (CMAB) problem
+
+
+<!-- 
+
+bandit problems and algorithms we have discussed in previous lectures are great
+- some of the most successful applications of RL
+- BUT, in a lot of situations we are able to observe something about the arms or the context
+
+This is where contextual bandits come in
+
+-->
+
+
+
+## Still a subclass of reinforcement learning problems, but richer
+. . . 
+
+\center
+\includegraphics[width=0.6\textwidth]{figs/gergely_RLproblem.png}
+
+. . . 
+
+**Two key challenges of RL:**    
+1. Dealing with long-term effects of actions  
+2. Dealing with uncertainty due to partial feedback  
+
+<!-- 
+
+Reminder of the RL problem and how contextual bandits fit in
+- the agent interacts with the environment...
+
+Bandit theory focuses on the 2nd problem
+- it does that by focusing on partial feedback and eliminating the complexity emanating from long-term effects of actions
+- hence so far we dealt with a single state
+- although restless bandits relaxed that assumption a bit
+
+Contextual bandits bring states back in
+- but still in an impoverished form
+- new state is not a result of an action, environment randomly drawns a new state to serve regardless of the action
+- a key distinction from the full RL problem
+- but crucial as it still breaks the long terms consequences of actions
+
+-->
+----
+
+
+
+## Formulation
+. . . 
+
+- A tuple $\langle \mathcal{A}, \mathcal{S}, \mathcal{R} \rangle$  
+- We introduce the state representation again
+- $\mathcal{A}$ is a set of actions/arms  
+- $\mathcal{S}=P[s]$ is an unknown distribution over states (or "contexts") 
+- $\mathcal{R}^a(r) = P[r|s,a]$ is an unknown probability distribution over rewards  
+
+. . . 
+
+- At each step $t$ 
+    + The environment generates state $s_t \sim \mathcal{S}$  
+    + The agent selects an action $a_t \in \mathcal{A}$  
+    + The environment generates a reward $r_t \sim \mathcal{R}_{s_t}^{a_t}$  
+
+. . . 
+
+- The goal is still to maximise cumulative reward $\sum^t_{\tau=1} r_{\tau}$
+- By devising a policy that maps context into actions, $\pi(a|s)$
+
+<!-- 
+Still partial feedback - observin reward only for the selected arm!
+
+Lets check some of the use cases, what a context can look like
+And also get some intuition of how algorithms would look like
+-->
+----
+
+
+
+## Displaying ads most likely to be clicked
+
+\center
+\includegraphics[width=0.4\textwidth]{figs/freestyle2.jpg}\hspace{5mm}\includegraphics[width=0.4\textwidth]{figs/advantage2.jpg}
+
+\includegraphics[width=0.4\textwidth]{figs/ergodoxez.jpg}\hspace{5mm}\includegraphics[width=0.4\textwidth]{figs/KeyMouse.png}
+
+\source{Me, buying a keyboard to alleviate my wrist pain :)}
+
+<!-- 
+
+what do companies want
+- company that is advertising want as much as sales as possible, i.e. they want to max clicks  
+- intermediary like criteo wants the same thing as they get % based on clicks  
+
+the problem
+- which ad to show you on a website that will attract your attention, make you want to click on an ad and potentially buy a product
+
+what is a context here
+- properties of the product/ad
+- website visitor features - based on cookies, previous interactions with the website etc
+- instead of displaying an ad that works well on average (across all users), ad can be customised 
+- you treat each user independently, no connection to the previous user
+- probably a simplification, but perhaps good enough
+
+-->
+----
+
+
+
+## Choosing frontpage stories most likely to be read 
+
+\center
+\includegraphics[width=\textwidth]{figs/theguardian.pdf}
+
+\source{\href{https://www.theguardian.com/uk}{theguardian.com, May 6, 2020}}
+
+
+<!-- 
+
+what do companies want  
+- The Guardian want to max reading, their goal is to provide content readers will engage with
+- happy customers will buy a subscription or donate money
+
+problem
+- stories are numerous, which ones will we show on a frontpage
+- which one will we display in a bigger size than the others
+
+what is a context here
+- properties of the news (extract a topic)
+- website visitor features - based on cookies, previous interactions with the website etc
+- instead of displaying a news stories ordering that works well on average (across all users), ordering can be customised for each visitor 
+
+-->
+----
+
+
+
+## Where to take a bite?
+
+\center
+\includegraphics[width=0.45\textwidth]{figs/quimetquimet.png}\hspace{5mm}
+\includegraphics[width=0.45\textwidth]{figs/federal.jpg}
+
+\source{\href{https://culinarybackstreets.com/cities-category/barcelona/2013/quimet-quimet/k}{Culinary Backstreets}, \href{http://www.federalcafe.es/barcelona/}{Federal}}
+
+<!-- 
+
+something on a more personal level... 
+- choosing a bar for a bite and a drink
+- I used to live in Poble Sec, and these are one of my favourite spots there - Quimet Quiet on the left side, and Federal on the right side
+- context can be popularity, trip advisor rating, whats the weather forecast (fancy a terrace?), or whats the company
+
+THINKING TIME!
+- how do you make a decision in this situation? do you use the context, features you can observe about the options?
+
+THINKING TIME!
+- if yes, why do you think thats a good approach? if no, why not? or better yet, in which circumstances do you do that?
+
+THINKING TIME!
+- what would allow you to exploit information about the context?
+    - I hope the answer was learning about relationship between observed features and rewards
+
+hopefully this already illustrates why context matters
+- it can make learning more efficient
+    - because you know what a good bar for that particular purpose would look like, you can predict the value even without sampling!  
+- in other words, based on previously observed arms you generalize to unseen, new arms
+- contrast it to previous bandit algorithms - you need to have at least one observation to have any clue about 
+- hence, you can potentially save a lot of samples
+
+THINKING TIME!
+- what is the source of difficulty with learning how context is related to rewards? 
+    - selection bias! exploitation induces correlations into your observations, they are not IID any more and each additional observation is not so informative
+
+THINKING TIME!
+- when you wouldnt use context?
+    - small number of actions, after trying them out a lot of times
+    - e.g. sticking to your neighborhood, after 10y you know every bar there and the average payoff for every purpose, no need for feature knowledge
+- this gives you an answer where context algos will be more important
+    - where new options often change
+    - e.g. news recommendation - new stories constantly cropping up
+
+-->
+----
+
+
+
+## Optimizing hyperparameters
+. . . 
+
+\includegraphics[width=0.5\textwidth]{figs/Snoek.png}\hfill
+\includegraphics[width=0.5\textwidth]{figs/Bergstra.png}
+
+. . .
+
+- CIFAR 10: state of the art was test error of 18%, they achieved 14.98%  
+- MNIST rotated background images
+
+\source{Snoek et al 2012; Bergstra et al 2011}
+
+<!-- 
+
+here is a new use case we haven't seen in previous bandits
+- you can think of optimizing hyperparameters as a contextual bandit, one particular set of hyperparameters would be a single arm, you train a model with those hyperpars and observe model's accuracy - thas your reward!
+- its a bit different than problems so far as you can often "design" the arm you wish to try next and context variables are most often continuous
+- this is called a model-based approach to optimization
+
+Here are some illustrations of what kind of boost in performance you get by using some of the contextual bandit algorithms over grid and random search
+
+Snoek
+- conv nets, 3 layer, 9 hypers
+- CiFAR 10, 60000 32x32 colour images in 10 classes, with 6000 images per class
+- at that time state of the art was 18% test error data, they achieved 14.98%
+
+Bergstra 2011
+- MNIST rotated background images, dataset (MRBI), 
+- In another dataset (convex),
+
+-->
+----
+
+
+
+## Preference learning  
+
+\center
+\includegraphics[width=0.9\textwidth]{figs/netflix.png}
+
+\source{\href{https://www.netflix.com}{Netflix webpage}}
+
+<!-- 
+here is another new use case - preference learning 
+- Modern market research
+- one could think of actively querying ppl's preferences to customize the recommendations 
+- idea is that you iteratively pose questions that would allow you to figure out the function that users have in their mind, so that you can predict their preferences 
+    - e.g. netflix, instead of collabroative filtering, what works for most people 
+    - or financial advisor for making stock investments, based on investor risk attitudes
+-->
+----
+
+
+
+## Interactive user interfaces
+
+\center
+\includegraphics[width=0.9\textwidth]{figs/Brochu_etal_2010_fig1.pdf}
+
+\source{Brochu, Brochu \& de Freitas (2010)}
+
+<!-- 
+same principle can be used for another purpose - interactive interfaces
+- designers of animations (movies, games etc) might know what they want to achieve but have difficulties tweaking the parameters of the objects that would achieve that (engine for generating certain shapes etc)
+- instead interface shows pairs of options with different sets of parameters, and through iterations arrives at a seet of pars that is close to what designer wants
+- this is an example I really liked from a paper by Brochu^2 and de Freitas
+-->
+----
+
+
+
+## Learning with context 
+. . .
+
+- Before any learning happens we (agent designers) choose a *form* of the policy  
+    - e.g. neural network, decision trees, ridge regression  
+    - this defines a *policy space*, $\Pi$, what policies we can possibly learn  
+
+. . . 
+
+- Assumption is, $\exists \pi \in \Pi$ that yields high rewards
+
+. . . 
+
+- We want to learn through experimentation to do almost as well as best $\pi$ 
+- Typically we want $\Pi$ to be large, but finite  
+- This allows us to learn complex behaviors, expressive policies  
+
+. . . 
+
+- Challenges:  
+    - $\Pi$ can be extremely large  
+    - When action selected, only observe reward for policies that would have chosen same action  
+    - While we need to be learning about **all** policies, simultaneously performing as well as the best   
+
+
+<!-- 
+
+How do we learn with context?
+Let me give you a high level picture first.
+
+Now you can already see how important it is what kind of model we use, the richer the model (say NNs) it will be more difficult to learn to find the best one, or at least, it will be difficult to provide guarantees about performance.
+
+A natural first step will be to consider linear models, constrained policy space, but manageable. That will be our first stop
+
+But before that let me first briefly mention few influential algorithms that we will not talk about. 
+-->
+----
+
+
+## What we will not cover
+. . . 
+
+- Full information setup
+    - Agent has access to all rewards
+    - Follow-the-leader 
+    - Hedging 
+
+. . . 
+
+- Important theoretical ideas and development
+- But not of practical use
+    - Algorithms assume oracles
+    - Access to counterfactuals
+
+. . . 
+
+- Some topics in contextual bandits with partial feedback
+    - Bandits with expert advice 
+    - Exp4 (Exp3 with experts)
+
+
+<!-- 
+
+We will focus on one algorithm for linear models LinUCB and a class of algorithms within Bayesian approach to contextual bandits called Bayesian optimization.  
+-->
+----
+
+
+# Stochastic linear bandits and LinUCB
+
+<!-- 
+Here we will essentially put some assumption on the structure of how context relates to the rewards - we will assume rewards are linear combination of context features
+-->
+
+## Stochastic contextual bandits
+. . . 
+
+- Reward is now a combination of arm and context (state) $$r_t = f(c_t,a_t) + \epsilon_t$$
+    - where $f: C \times [K] \to \mathbb{R}$ is (unknown) reward function and $\epsilon_t$ is zero-mean IID noise term
+
+. . . 
+
+- Regret is $L_T = E[\sum^T_{t=1} \max_{a \in K} f(c_t,a) - \sum^T_{t=1}r_t]$
+
+. . . 
+
+- Poor man's contextual bandit algorithm
+    - Assume $C$ is finite 
+    - Assign bandit to each $c \in C$ and learn action values
+    - Problem if $C$ (and $K$) is very large
+
+. . . 
+
+- How to save this? Assume some structure
+
+<!-- 
+Context/state is random, hence the expectation
+
+Lets discuss briefly the simplest idea
+- just treat each context as a separate bandit problem!
+- that actually has good worst case regret $L_T = O(\sqrt{T|C|K})$
+- how to save this? assume structure
+-->
+----
+
+
+## Stochastic linear bandits
+. . . 
+
+- Assume there is a feature map $\psi: C \times [K] \to \mathbb{R}^d$
+- And for an unknown vector $\theta_* \in \mathbb{R}^d$ it holds that $$f(c,a) =  \theta_*^T \psi(c,a), \quad \forall(c,a) \in C \times [K]$$
+
+. . . 
+
+- We can simplify things
+    - In each round $t$ agent is given the choice set $A_t \subset \mathbb{R}^d$
+    - Agent chooses an action $a_t \in A_t$ and receives reward $$r_t = \theta_*^T a_t + \epsilon_t$$
+
+. . . 
+
+- UCB approach
+    - Construct a confidence set $\mathcal{C}_t \subset \mathbb{R}^d$ that contains the unknown parameter vector $\theta_*$ with high probability  
+    - For any action $a \in \mathbb{R}^d$ let $\textrm{UCB}_t(a) = \max_{\theta \in \mathcal{C}_t} \theta^T a$ be an upper bound on the expected reward $\theta_*^T a$ of $a$
+    - Then select $a_t = \textrm{argmax}_{a \in A_t} \textrm{UCB}_t(a)$
+
+. . . 
+
+- Introduced by [Abe et al. (2003)](https://idp.springer.com/authorize/casa?redirect_uri=https://link.springer.com/content/pdf/10.1007/s00453-003-1038-1.pdf&casa_token=tUz4vWj2cOQAAAAA:j_P64fOgxmVOFoD0d5dIJjpqIS37yC96CDkSk_RIML4LQNhKfjZ7CIx6uP6RM1NszyoYTmI70DWT7LyTFQ) and developed by [Auer (2002)](http://www.jmlr.org/papers/volume3/auer02a/auer02a.pdf)
+
+
+<!-- 
+One simple assumption on the structure is that there is a feature mapping between combinations of contexts and arms to some d-dimensional real vector
+And that there is some vector of parameters that when multiplied with result of this feature mapping is equivalent to the reward function.
+
+As discussed in the previous video, using all those examples, features could be characteristics of the arms, e.g news stories (length,topic,freshness) as well as properties of the context, e.g. user characteristics (age, gender etc) 
+
+Simplifying notation
+- essentially each action can be thought of as this feature mapping that lives in R^d, so we can simply think of an action as a vector of features that describes the combination of context and arm, instead of a number identifying the arm.
+- if you assume that these features are orthogonal to each other, you go back to a finite armed setting (canonical multi-armed bandit problem) 
+
+UCB approach
+- you can already guess that the tricky bit is to construct this confidence set
+- this approach goes by various name in the literature - LinRel, LinUCB, OFUL
+-->
+----
+
+
+## Illustration of the UCB approach
+. . . 
+
+\centering
+\includegraphics[width=0.7\textwidth]{figs/lattimore_2020_confset.pdf}
+
+\source{\href{https://banditalgs.com/2018/02/09/bandit-tutorial-slides-and-update-on-book/}{banditalgs.com}}
+
+
+
+## LinUCB
+. . . 
+
+- Inputs: $\alpha \in \mathbb{R}_+,K,d \in \mathbb{N}$ 
+- Set $A \gets I_d$ and $b \gets \mathbf{0}_d$
+- **for** $t=1,2,\dots,T$ **do**
+    - $\theta_t \gets A^{-1}b$
+    - Observe $K$ features $x_{t,1},\dots, x_{t,K} \in \mathbb{R}^d$
+    -  **for** $a=1,2,\dots,K$ **do**
+        - $p_{t,a} \gets \theta_t^T x_{t,a} + \alpha \sqrt{x^T_{t,a} A^{-1} x_{t,a}}$
+    - **end for**
+    - Choose action $a_t = \textrm{argmax}_a p_{t,a}$ 
+    - Observe reward $r_t \in {0,1}$
+    - $A \gets A + x_{t,a} x_{t,a}^T$
+    - $b \gets b + x_{t,a} r_t$
+- **end for**
+
+. . . 
+
+- Theoretical guarantees in [Chu et al. (2011)](http://www.jmlr.org/proceedings/papers/v15/chu11a/chu11a.pdf) and empirical performance in [Li et al. (2010)](https://dl.acm.org/doi/pdf/10.1145/1772690.1772758)
+
+<!-- 
+Here is the algorithm
+- I didnt convert it to the notation I used so far, its directly copied from the papers - every source uses a bit different notation, its a bit difficult to keep it consistent
+- things here dont seem obvious at first but its actually not that complex
+- first note that A^-1 b is actually online linear regression
+- A is a design matrix multiplied by itself (updating it in every step is cheaper)
+- b is covariance between features and rewards
+- alpha is simply a weight on uncertainty term
+- the rest of the uncertainty term is the important bit - one that is usually hard to define - here it is computed efficiently in closed form (for a linear model), the term inside the sqrt - you can think of A^-1 as a covariance of the posterior distribution while \theta is the mean, then xA^-1x is the variance of the expected payoff x\theta 
+
+LinRel in Auer 2002 is very related (but uses SVD)
+- LinUCB is simpler to state and implement, ridge reg instead eigen decomposition so its more stable
+
+Exp4
+- good theoretical guarantees ($O(\sqrt{T})$), but the computational complexity may be exponential in the number of features
+
+One thing to note here is how exploration-exploitation changes, instead of exploring to reduce uncertainty (or gain information) about a single arm, you actually explore to learn more how features are related to rewards (i.e. you explore to learn what makes a good bar or a restaurant). This is bcs arms are correlated and by sampling one arm you learn about all arms.
+-->
+---- 
+
+
+## Performance
+. . . 
+
+- Regret bound: $O(\sqrt{Td\ln^3(KT\ln(T)/\delta)})$
+
+. . . 
+
+- Comparison to "poor man's" solution 
+\includegraphics[width=0.55\textwidth]{figs/lattimore_2020_fig191.pdf}
+
+. . . 
+
+- Offline evaluation in [Li et al. (2010)](https://dl.acm.org/doi/pdf/10.1145/1772690.1772758) 
+\includegraphics[width=0.4\textwidth]{figs/li_etal_2010_fig1.pdf}\hspace{2mm}
+\includegraphics[width=0.4\textwidth]{figs/li_etal_2010_fig4.pdf}
+
+\source{Lattimore \& Czsepesvari (2020), Fig 19.1; Li et al. (2010) Fig 1 and 4}
+
+<!-- 
+Regret
+- Here we simply state it, similar to LinRel which also has $O(\sqrt{Td})$
+- Important bit is Td which is as good as you can hope for, ln3 terms is small and less important
+- If you are really interested, check Lattimore's book, probably its best explained there
+
+Poor man comparison
+- The plot on the left compares the regret of UCB (Algorithm 6) and LinUCB
+on a Gaussian bandit with k = 2, n = 1000 and varying suboptimality gaps ∆. 
+- The plot on the right compares the same algorithms on a linear bandit with actions uniformly distributed on the sphere and with d = 5 and n = 5000. The parameter theta is also uniformly generated on the sphere
+
+Serving news (Li etal 2010)
+- they tested LinUCB on data from news stories on Yahoo! front page
+- algo chooses the article that takes the centralmost position
+- clicking is reward of 1 and 0 otherwise, articles are arms served to users and t-th user gives the context
+- what is this offline evaluation all about?
+    - instead of deploying algorithms live to test them on a fraction of the website traffic, they propose collecting data from users using random policy 
+    - you hold the observations where action made was the same that your algo would do and discard all other observations, this has been proved to be a correct way to evaluate bandit algorithms 
+    - "because the logging policy chooses each arm uniformly at random, each event is retained by this algorithm with probability exactly 1/K, independent of everything else. This means that the events which are retained have the same distribution as if they were selected by D"
+    - then this data can be used to train and test bandit algorithm, without potentially hurting customers 
+    - (other approach is to create a simulator - usually hard to come up with realistic simulators)
+
+-->
+---- 
+
+
+
+# Beyond linear models with Bayesian optimization
+
+
+<!-- 
+
+Of course, we wouldn't want to constrain ourselves with linear models - it's a small policy space! 
+
+I.e. potentially we can do much better with more expressive, nonlinear models.
+
+The question is how to do that in a tractable way. The answer is to take a Bayesian route.
+
+-->
+
+
+## Bayesian optimization roadmap 
+. . . 
+
+
+\center
+\includegraphics[height=0.8\textheight]{figs/Shahriari_2016_fig1.pdf}
+
+\source{Shahriari et al 2016}
+
+
+<!-- 
+
+This figure is the roadmap, where we want to arrive sometime in the next lecture. 
+
+Here you have a simple 1-dimensional problem, single feature on x-axis and rewards on y-axis which you are trying to maximise.
+
+Imagine you have a Bayesian model that can give you posterior predictive distribution over any point given some training points.
+- this models is illustrated with full black line (mean) and blue region (uncertainty, 2 SD)
+
+Then you can exploit the knowledge of uncertainty to explore the policy space in an efficient manner. This is illustrated with the "acquisition function" in green. UCB is one of the popular choices here in how to combine mean and uncertainty.
+
+The tricky bit is the Bayesian model. As it turns out, there is a Bayesian nonlinear model that is tractable, based on Gaussian processes. 
+
+Because GPs are a cornerstone of the Bayesian optimization and it might be an unfamiliar class of models to many of you, we will focus on understanding them better until the rest of this lecture.
+
+-->
+----
+
+
+## Refresher: Multivariate Gaussian distributions 
+. . . 
+
+- [Generalization](https://en.wikipedia.org/wiki/Multivariate_normal_distribution) of a one-dimensional Gaussian distribution  
+- Defined by a mean vector $\mu$ and covariance matrix $\Sigma$, $X \sim \mathcal{N}(\mu, \Sigma)$
+- Distribution is centered about $\mu$, while $\Sigma$ determines its shape
+
+. . . 
+
+- Decomposition on $X$ and $Y$ subsets is useful: $$P_{X,Y} \sim \mathcal{N}\left(\begin{bmatrix} \mu_X \\ \mu_Y \end{bmatrix}, \begin{bmatrix} \Sigma_{XX} & \Sigma_{XY} \\ \Sigma_{YX} & \Sigma_{YY} \end{bmatrix}\right)$$    
+
+. . . 
+
+\centering
+\includegraphics[height=0.4\textheight]{figs/MultivariateNormal.png}
+
+\source{\href{https://commons.wikimedia.org/w/index.php?curid=25235145}{Wikimedia}}
+
+
+
+
+<!-- 
+
+Before we explore GPs its useful to refresh our memory about important properties of Gaussian distribution. 
+
+As the name suggests, Gaussian distribution is the building block of Gaussian processes.
+
+Decomposition
+- imagine denoting several variables as X and several as Y from the original set X
+- in the simple 2-dim example above diagonal elements would be variances of each dimension while off-diagonal elements are covariances 
+
+-->
+----
+
+
+
+## Refresher: Multivariate Gaussian distributions 
+. . . 
+
+- They have a great property of being closed under marginalization and conditioning (see Rasmussen & Williams, 2006 for derivations)
+
+. . . 
+
+- **Marginalization** $$X \sim \mathcal{N}(\mu_X, \Sigma_{XX})$$ $$Y \sim \mathcal{N}(\mu_Y, \Sigma_{YY})$$
+
+. . . 
+
+- **Conditioning** $$X|Y \sim \mathcal{N}(\mu_X + \Sigma_{XY}\Sigma_{YY}^{-1} (Y-\mu_Y), \Sigma_{XX} - \Sigma_{XY}\Sigma_{YY}^{-1}\Sigma_{YX})$$ $$Y|X \sim \mathcal{N}(\mu_Y + \Sigma_{YX}\Sigma_{XX}^{-1} (X-\mu_x), \Sigma_{YY} - \Sigma_{YX}\Sigma_{XX}^{-1}\Sigma_{XY})$$
+
+
+<!-- 
+
+Two properties of multivariate Gaussian distribution are the cornerstone of the success of GPs - it has closed form solutions for marginalization and conditioning. 
+- We will not derive this here
+- can be found in an appendix of RW2006 book.
+
+marginalization
+- helps us to extract partial information from multivariate probability distributions
+- given the joint normal probability distribution described by the decomposition over vectors of random variables X and Y, marginalized probability distributions can be computed in a simple way 
+- in other words they do not depend on terms related to the other subset.
+
+Conditioning 
+- used to determine the probability of one variable depending on another variable
+- it yields a modified Gaussian distribution
+- again, we wont derive this, what is important is that you can compute this exactly
+- this one is particularly important as it allows Bayesian inference in GPs.
+- the only potentially problematic part here is the computational cost
+- THINKING TIME!
+- which part in the conditioning equation is costly?
+    - matrix inversion
+- THINKING TIME!
+- what is the cost of matrix inversion?
+    - it is cubic in number of observations
+
+-->
+----
+
+
+
+
+## Gaussian Processes (GP) - an overview
+. . . 
+
+- GP is a stochastic process (a collection of random variables), such that every finite collection of those random variables has a multivariate normal distribution  
+
+. . . 
+
+> - Goal of machine learning is to generalize to new data, given some training data and a model  
+>     - We will assume that training points $X$ are a finite collection of random variables, each following a Gaussian distribution  
+>     - We want to predict function values for test points $X_*$  
+>     - We model the distribution of $X_*$ together with $X$ as a multivariate Gaussian distribution, where joint distribution ($|X| + |X_*|$ dimensional) spans the space of possible function values for the function we want to predict  
+>     - Bayesian inference requires conditional probability $X_*$ given $X$ - this is given immediately by conditioning property above!
+>     - Mean and covariance of conditional distribution defines the function for $X_*$     
+
+. . . 
+
+- Note that this makes GP a Bayesian nonparametric model  
+
+
+<!-- 
+
+THINKING TIME!
+- is the algorithm I have just described parametric or nonparametric?
+    - the answer was nonparametric I hope
+
+- Function is shaped by the data  
+- Such Bayesian models are usually intractable  
+- Here it's tractable, thanks to properties of Gaussian distributions
+
+-->
+
+----
+
+
+
+## Mean and kernel function - key ingredients
+. . . 
+
+- Behavior of the GP is completely specified by its mean function and kernel (or covariance) function. 
+
+. . . 
+
+- For a real process $f(\mathbf{x})$ we define $m(\mathbf{x})$, a mean function modeling the expected output of the function, and $k(\mathbf{x}, \mathbf{x}')$, a kernel function modeling the covariance between different points. $$m( \mathbf{x}) = E[f(\mathbf{x})]$$ and $$k(\mathbf{x}, \mathbf{x}') = E [(f( \mathbf{x})-m(\mathbf{x}))(f( \mathbf{x'})-m(\mathbf{x}'))]$$  
+
+. . . 
+
+- We write the Gaussian process as $$f(\mathbf{x}) \sim \mathcal{GP}(m(\mathbf{x}),k(\mathbf{x}, \mathbf{x}'))$$
+- The random variables represent the value of the function $f(\mathbf{x})$ at location $\mathbf{x}$
+
+. . . 
+
+- Mean and kernel function are your priors!
+
+<!-- 
+
+process $f(\mathbf{x})$
+- this is the function of interest, one we want to learn to be able to make good predictions
+- e.g. rewards as a function of observable features/context
+
+Priors
+- they define the space of functions you are modelling
+- from linear to something more expressive
+
+Why is kernel more important?
+- You can integrate out linear and constant mean functions exactly, provided you have zero-mean Gaussian priors on their parameters 
+- it is usually a good idea to optimize an empirical constant mean function
+- i.e. empirically setting the mean of the prior on your constant mean function. 
+-->
+----
+
+
+
+## Kernel in more concrete terms
+. . . 
+
+- Kernel function $k$ defines similarity between points, e.g. points in training set $X$ and test set $X_*$  
+- $k:\mathbb{R}^n \times \mathbb{R}^n \to \mathbb{R}$
+
+. . . 
+
+- This allows us to compute entries in the covariance matrix, $\Sigma=\textrm{Cov}(X,X_*)$, by iteratively applying function $k$ on all pairwise combinations of points in $X$ and $X_*$
+
+. . . 
+
+
+\centering
+\includegraphics[width=0.6\textwidth]{figs/sigma_covariance.png}
+
+\source{\href{https://distill.pub/2019/visual-exploration-gaussian-processes/
+}{Distill}}
+
+<!-- 
+what does kernel mean in concrete terms
+n is dimensionality of the input points
+-->
+----
+
+
+
+## Radial basis, Gaussian or Squared exponential kernel
+
+. . . 
+
+- A popular choice: $$k(x,x') =\sigma^2\exp\left(-\frac{(x-x')^2}{2\lambda^ 2}\right)$$  
+    - We will focus on this one in Bayesian optimization   
+
+. . . 
+
+- Correlation between two points decays according to a power function in dependency of the distance between the two points, governed by $\lambda$
+- Covariance is symmetric, that is, only the distance between two points matters, but not the direction. 
+
+. . . 
+
+- Good for smooth functions, hyperparameters $\lambda$ (called the length-scale) and $\sigma^2$ (a scale factor) are normally optimized by using the marginal likelihood
+
+<!--
+lambda
+- determines the length of the 'wiggles' in your function, in general, you won't be able to extrapolate more than lambda units away from your data
+- each dimension could have its own lambda parameter, this is called automatic relevance determination (ARD), those features that are less relevant get larger value
+
+sigma
+- output variance parameter, determines the average distance of your function away from its mean, many kernels have this parameter
+
+Pitfalls
+- solution that will probably work pretty well for interpolating smooth functions when N is a multiple of D
+- however, if there are any disc it wont work well (or discontinuous in its first few derivatives)
+- usually optimized length-scale will be very short (to accommodate discontinuities), resulting in a posterior mean that will be zero almost everywhere, failing to extrapolate in smoother regions
+-->
+----
+
+
+
+
+## Distribution over functions
+. . . 
+
+- Specifying a mean and kernel function implies a **distribution over functions** 
+
+. . . 
+
+- You can draw function samples from this distribution, evaluated at some points (e.g. test points $X_*$) and computing the associated covariance matrix $K$ using the kernel function 
+- Then you generate a random Gaussian vector using this covariance matrix. $$\mathbf{f_*} \sim \mathcal{N}(0, K(X_*,X_*))$$
+
+. . . 
+
+- We are usually not interested in drawing random functions from the prior 
+- Joint distribution of the training outputs $\mathbf{f}$ and test $\mathbf{f}_*$, according to the prior is $$\begin{bmatrix}\mathbf{f} \\ \mathbf{f}_* 
+     \end{bmatrix} \sim \mathcal{N}\left(\mathbf{0}, \begin{bmatrix} K(X,X) & K(X,X_*) \\ K(X_*,X) & K(X_*,X_*) \end{bmatrix}\right)$$    
+
+<!-- 
+
+We will see an example of draws from this prior in few slides
+
+Remember the decomposition you have seen above for multivariate Gaussians?
+This is the same thing!
+(here we assume zero mean function)
+
+Now you can already see how we will use conditioning property to perform Bayesian inference
+-->
+----
+
+
+## Predictions
+. . . 
+
+- To get a posterior we need to restrict the joint prior distribution to contain only those functions which agree with observed training points
+- We achieve this by conditioning $$\begin{split}\mathbf{f}_*|X_*,X,\mathbf{f} = \mathcal{N}( & K(X_*,X) K(X,X)^{-1} \mathbf{f},\\ & K(X_*,X_*) - K(X_*,X) K(X,X)^{-1} K(X,X_*))\end{split}$$
+
+. . . 
+
+- Note that this assumed noise-free observations, $\mathbf{f}=f(\mathbf{x})$
+- In practice, we observe function values with some noise, $\mathbf{f}=f(\mathbf{x}) + \epsilon$ 
+- Assuming noise is IID and $\epsilon \sim \mathcal{N}(0, \sigma_n^2)$, the prior on the noisy observations becomes $\textrm{cov}(\mathbf{y}) = K(X,X) + \sigma_n^2 I$
+
+. . . 
+
+- Assuming noisy observations predictions are given by $$\begin{split}\mathbf{f}_*|X_*,X,\mathbf{y} = {} & \mathcal{N}(K(X_*,X)[K(X,X) + \sigma_n^2 I]^{-1} \mathbf{y},\\ & \hspace{-4mm} K(X_*,X_*)-K(X_*,X)[K(X,X) + \sigma_n^2I]^{-1} K(X,X_*))\end{split}$$
+
+
+<!-- 
+Noise-free predictions
+- this assumption might be ok e.g. in computer simulations
+- if you focus on the mean, this surely looks familiar
+- what does OLS estimator looks like? econometric 101
+- its a weighted linear combination of observations f (or y later on)
+- weights is cov(training,test) over variance(test)
+- covariance matrix - first term is our prior and we subtract from it the information training points give us about the function; note that there is no dependence on observed function values (property of the Gaussian distribution)
+
+Noisy observations
+- definitely the case for stochastic contextual bandits we are interested in
+- usually we assume simple additive noise term
+- conditioning changes very little
+
+-->
+----
+
+
+## Marginal likelihood
+. . . 
+
+- I.e. model evidence, $p(\mathbf{y}|X)$, is the integral of the likelihood times the prior $$p(\mathbf{y}|X) = \int p(\mathbf{y}|\mathbf{f},X) p(\mathbf{f}|X) d\mathbf{f}$$
+
+. . . 
+
+- The term *marginal* refers to the marginalization over the function values $\mathbf{f}$ 
+
+. . . 
+
+
+- This integral can be computed as $$\log p(\mathbf{y}|X) = -\frac{1}{2} \mathbf{y}^T[K + \sigma_n^2 I]^{-1} \mathbf{y} - \frac{1}{2} \log |K + \sigma_n^2 I| -\frac{n}{2} \log 2\pi $$
+
+- Log probability is usually used for optimization 
+
+<!-- 
+We use this to optimize hyperparameters and do model selection
+Determinant for K is difficult to compute for large n
+-->
+----
+
+
+
+## Drawing from the GP prior and posterior
+
+\center
+\includegraphics[width=\textwidth]{figs/GPpriorpost.pdf}
+
+\source{Rasmussen, Williams (2006)}
+
+<!-- 
+Figure 2.2 from the book 
+
+(a) shows three functions drawn at random from a GP prior with RBF kernel, the dots indicate values of y actually generated; the two other functions have (less correctly) been drawn as lines by joining a large number of evaluated points. 
+
+(b) shows three random functions drawn from the posterior, i.e. the prior conditioned on the five noise free observations (+). 
+
+The shaded area represents the pointwise mean plus and minus two times the standard deviation for each input value (corresponding to the 95% confidence region), for the prior and posterior respectively.
+-->
+----
+
+
+## Dependence on hyperparameters
+
+\center
+\includegraphics[width=0.8\textwidth]{figs/GPhyperdep.pdf}
+
+\source{Rasmussen, Williams (2006)}
+
+<!-- 
+Figure 2.5 from the book
+
+(a) Data is generated from a GP with hyperparameters (\lambda, \sigma_f, \sigma_n) = (1, 1, 0.1), as shown by the + symbols. Using Gaussian process prediction with these hyperparameters we obtain a 95% confidence region for the underlying function f (shown in grey). 
+
+(b) and (c) again show the 95% confidence region, but this time for hyperparameter values (0.3, 1.08, 0.00005) and (3.0, 1.16, 0.89) respectively.
+-->
+----
+
+
+## More on kernels 
+. . . 
+
+- Many choices for a kernel  
+    - constant: $k(x, x') = C$
+    - white noise: $k(x, x') = \delta I_n$
+    - linear: $k(x, x') = \sigma^2_b + \sigma^2_v(x-c)(x'-c)$
+    - squared exponential: $k(x, x') = \sigma^2\exp\left(-\frac{(x-x')^2}{2\lambda^ 2}\right)$
+    - periodic: $k(x, x') = \sigma^2\exp\left(-\frac{2\sin^2(\pi|x-x'|/p)^2}{\lambda^ 2}\right)$
+    - rational quadratic: $k(x, x') = \sigma^2 \left(1 + \frac{(x-x')^2}{2\alpha\lambda^ 2}\right)^{-\alpha}$
+    - and many more
+
+. . . 
+
+- A valid kernel has to result in a positive definite $\Sigma$ matrix  
+
+. . . 
+
+- Algebra with kernels, e.g.:  
+    - **Sum** of valid kernels is a valid kernel
+    - **Product** of valid kernels is a valid kernel    
+
+. . . 
+
+- The choice is normally based on assumptions such as smoothness and likely patterns to be you expect in the data.
+
+<!-- 
+
+You probably encountered kernels before, in SVM, where usually linear, polynomial and RBF kernel are used.
+
+Linear kernel
+- it's non-stationary kernel, the offset c determines the x-coordinate of the point that all the lines in the posterior go though. At this point, the function will have zero variance (unless you add noise)
+- This is simply doing Bayesian linear regression 
+- But this is not an efficient way to use this model, there are specialized algorithms that scale as O(n)
+- Nevertheless, its useful for combining with other kernels
+
+Periodic
+- to model functions which repeat themselves exactly
+- period p simply determines the distance between repetitions of the function
+
+Rational quadratic
+- Equivalent to adding together many SE kernels with different lengthscales.
+- If you expect to see functions which vary smoothly across many lengthscales. 
+- alpha determines the relative weighting of large-scale and small-scale variations, when alpha goes to inf, the RQ is identical to the SE
+
+Stationary vs nonstationary kernels
+-  A stationary kernel is one that only depends on the relative position of its two inputs, and not on their absolute location.
+- linear kernel is nonstationary, where c specifies absolute location of the origin
+
+Valid kernels:
+- Positive definite, hence invertible
+
+Algebra with kernels
+- You can do simple algebra with kernels
+- Allows you to combine kernels in many ways to capture important characteristics of the data
+- A grammar with kernels!
+
+-->
+----
+
+
+
+## Compositional kernel example
+
+. . . 
+
+\center
+\includegraphics[width=0.8\textwidth]{figs/GP_kernelalgebra_CO2.png}
+
+\source{\href{https://peterroelants.github.io/posts/gaussian-process-kernel-fitting/}{A blog post on GPs}}
+
+<!-- 
+A sum of four kernels:
+- Long term smooth change in CO2 levels over time modelled by a exponentiated quadratic kernel
+- Seasonality based on a local periodic kernel, which consists of a exponentiated sine squared kernel multiplied with a exponentiated quadratic to make the seasonality degrade as further it gets from the observations 
+- Short to medium term irregularities modelled by a rational quadratic kernel
+- Observational noise which will be modelled directly by the white noise kernel
+
+10 parameters in total
+-->
+---- 
+
+
+
+## GP algorithm in practice
+
+
+\center
+\includegraphics[width=0.85\textwidth]{figs/GPalgo.pdf}
+
+\source{Rasmussen, Williams (2006)}
+
+<!-- 
+You could implement conditioning equations stated previously directly, but
+there are more efficient ways to do that, by using Cholesky decomposition.
+
+Cholesky decomposition is faster and numerically more stable, its complexity is slightly better O(n3/6)
+
+You will implement this in the second problem set!
+-->
+----
+
+
+## Computational considerations  
+
+. . . 
+
+- Although we have analytic expressions, exact inference in GP regression has a cost of $\mathcal{O}(n^3)$ 
+- Due to inversion of the covariance matrix  
+- Using Cholesky decomposition reduces the cost, but not much  
+
+. . . 
+
+- Hence, not a good choice for big data  
+- But, there are attempts at scaling GP's 
+    - Sparse GP using pseudo-inputs is a popular variant 
+    - Approximate GP (e.g. with Fourier features)
+
+
+. . . 
+
+- In Bayesian optimization we usually want to repeat it after each new observation, updating our hyperparameters as we go   
+- With large budgets the cost might be prohibitive 
+
+
+<!-- 
+
+Sparse GPs
+- you select (or optimize) a smaller number of points that will span the space
+- covariance is parameterized by the locations of M pseudo-input points, which we learn by a gradient based optimization
+- this has O(M^2 N) training cost and O(M^2) prediction cost per test case
+
+Fourier approximation
+- kernel trick, move to the weight space
+- approximate a kernel with finite number of fourier features
+
+I warmly recommend to read first two chapters of RW2006 book. Its a quick read and enough to get you going with basic GPs.
+-->
+----
+
+

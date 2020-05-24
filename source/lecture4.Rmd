@@ -1,0 +1,734 @@
+---
+title: "Lecture 4: Multi-armed bandits extensions and applications"
+author: "Hrvoje Stojic"
+date: "May 8, 2020"
+header-includes:
+   - \usepackage[absolute,overlay]{textpos}
+   - \setbeamercolor{framesource}{fg=gray}
+   - \setbeamerfont{framesource}{size=\tiny}
+   - \newcommand{\source}[1]{\begin{textblock*}{8cm}(0.5cm,8.9cm)\begin{beamercolorbox}[ht=0.5cm,left]{framesource}\usebeamerfont{framesource}\usebeamercolor[fg]{framesource} Source:~{#1}\end{beamercolorbox}\end{textblock*}}
+   - \usepackage{hyperref}
+   - \usepackage{xcolor}
+   - \hypersetup{colorlinks,linkcolor={red!50!black},citecolor={blue!50!black},urlcolor={blue!80!black}}
+output: 
+  beamer_presentation:
+    theme: "boxes"
+    colortheme: "default"
+    fonttheme: "professionalfonts"
+    highlight: kate
+    slide_level: 2
+---
+
+
+```{r, knitr_options, include=FALSE}
+    
+    # loading in required packages
+    if (!require("knitr")) install.packages("knitr"); library(knitr)
+    if (!require("rmarkdown")) install.packages("rmarkdown"); library(rmarkdown)
+
+    # some useful global defaults
+    opts_chunk$set(warning=FALSE, message=FALSE, include=TRUE, echo=TRUE, cache=TRUE, cache.comments=FALSE, comment='##')
+
+    # output specific defaults
+    output <- opts_knit$get("rmarkdown.pandoc.to")
+    if (output=="html") opts_chunk$set(fig.width=10, fig.height=5)
+    if (output=="latex") opts_chunk$set(fig.width=6,  fig.height=4, 
+        dev = 'cairo_pdf', dev.args=list(family="Arial"))
+    
+```
+
+
+```{r, Setup_and_Loading_Data, echo=FALSE}
+   
+    # cleaning before starting
+    # rm(list = ls())
+
+    # setwd("/home/hstojic/Teaching/BGSE_DS_StochModOptim/source")
+
+    # rmarkdown::render("session2.Rmd", clean=TRUE, output_dir = "../handouts")
+   
+
+```
+
+
+
+
+# Optimal solutions for stationary bandit problem
+
+<!-- 
+
+- UCB, Thompson sampling and similar choice strategies are ultimately heuristics
+
+- this is clearer when you consider horizon effects
+- all of them would be insensitive whether its 10 rounds left or 1000
+- of course, thats not sensible, you should oviously exploit if you have very few samples left in your budget
+
+- mention my own research
+  - humans are actualy quite sophisticated
+  - previous research has found most support for random exploration strategies, like softmax
+  - my research shows that they are actually more sophisticated, leveraging uncertainty estimates to make smarter choices
+  - other research shows that they are also sensitive about horizon, indicating that they are even more sophisticated
+
+- we will not cover these optimal solutions in details, I'll just provide a sketch
+    - first, I'm not an expert
+    - they work for very narrow set of problems
+
+-->
+
+
+## MDP formulation and dynamic programming
+. . . 
+
+> - Bandit problem can be formulated as an MDP   
+>     - Considering agent's information as a part of state space
+>     - Lookahead to determine how information helps in maximizing rewards
+> - Here is a sketch
+>     - Agent uses Bayes theorem to update beliefs about parameters $\theta(a)$ that determine the reward distribution   
+>     - Assume an information set $s_t(a)$ that summarizes agent's beliefs at time $t$ about $\theta(a)$     
+>     - Postulate a prior distribution at $t=0$ that describes beliefs about $\theta(a)$, $B_0(a)(\theta(a);s_0(a))$  
+>     - At trial $t$ agent's posterior can be summarised by $B_t(a)(\theta(a);s_t(a))$  
+>     - Which leads to a familiar Bellman equation: $V(s_t)=\textrm{max}_{a \in A} E[r_t(a) + \delta V(s_{t+1})|s_t]$  
+> - Curse of dimensionality: state space of size $|S|^A$  
+> - Tractable approximation with Bayesian Adaptive Monte Carlo Planning (Guez, Silver, Dayan, 2012; 2014)  
+
+
+<!-- 
+
+MDP formulation
+- just a sketch
+- now we can simulate what happens with each decision, how information state changes
+- if we can solve the MDP we have an optimal solution
+
+Curse of dimensionality
+- problem is that this gets big very fast
+- imagine we have gaussians, hence for each arm mean and var parameter of distribution - these are continuous parameters, so we have cont state space
+- this is difficult even when the optimal solution is approximated by choosing discrete points to represent S, as is common in the literature
+- but, doable for small enough problems (small number of arms and short horizon), bear that in mind
+
+-->
+----
+
+
+## Gittins indices
+. . . 
+
+> - For certain problem formulations there are [Gittins indices](https://en.wikipedia.org/wiki/Gittins_index) (Gittins & Jones, 1974; Whittle, 1980)  
+
+> - A sketch:  
+>     - We use a Bayesian setting same as above
+>     - Compare arm $a$ with virtual arm with fixed reward $\lambda(a)$
+>     - Bellman equation is then simplified: $V(s_t(a),\lambda(a))=\textrm{max} \{\lambda(a) + \delta V(s_t(a),\lambda(a)), E[r_t(a) + \delta V(s_{t+1}, \lambda(a))|s_t(a)]\}$  
+>     - Each subproblem only depends on the state evolution of a single arm $a$
+>     - Gittins' index $G(s_t(a))$ is the smallest value of $\lambda(a)$ such that the agent at time $t$ is just indifferent between sampling $a$ and receiving the fixed reward  
+>     - Repeat this for every arm  
+>     - Choose an arm with largest index in each trial: $\pi(s_t)=\textrm{argmax}_{a \in A} G(s_t(a))$
+
+
+<!-- 
+
+- I'm not that familiar with these solutions, so this is very superficial
+- Gittins didnt help it, his writing is quite difficult, Whittle 1980 is a paper that is more readable
+
+- sketch 
+  - in other words we equate the two terms inside the maximization operator in Bellman equation 
+  - if there is more uncertainty about an arm left to explore, the agent will demand a higher fixed reward to be willing to stop exploration.
+
+-->
+----
+
+
+
+## Gittins indices
+. . . 
+
+> - In summary, we develop an index for each arm by solving a subproblem that involves only that arm  
+> - Instead of a problem that is exponential in number of arms, we have a problem that scales linearly with number of arms  
+> - However, it's still computationally intensive, $\mathcal{O}(|S|^4)$    
+
+. . . 
+
+\center
+\includegraphics[height=0.5\textheight]{figs/lin_2015_gittins.pdf}
+
+\source{Lin, Zhang, Hauser (2015)}
+
+
+<!-- 
+
+Figure
+- solid line is one realization of Gittins’ index as it evolves when the arm is chosen repeatedly. 
+-  dashed line plots posterior mean belief, it is updated by experience and converges toward the true mean
+- dotted curve is simply the difference between Gittins’ index and the
+posterior mean, thus measuring the value of exploration - declines smoothly with experience because the value of exploration decreases with more information
+- THINKING TIME!
+- how does this relate to the UCB and TS approaches?
+- UCB and TS behave in an analogous manner, decreasing their exploration with amount of samples! - it is comforting that Gittins index rationalizes optimism in the face of uncertainty approach 
+- in fact, there are proofs that UCB is an index policy
+-->
+----
+
+
+
+# Restless bandits 
+
+
+## Formulation
+
+> - World is often non-stationary!  
+>     - For example, restaurants change chefs, service staff, quality of ingredients varies depending on the season, owners change, and the list goes on.  
+> - There are many ways to formulate a non-stationary process  
+> - One popular way is to assume that the process is a random walk, e.g. some form of a [Gaussian process](https://en.wikipedia.org/wiki/Gaussian_process): $$r_{t}(a) = Q_t(a) + \epsilon_t(a) \qquad \epsilon_t(a) \sim \mathcal{N}(0, \sigma_\epsilon)$$ $$Q_t(a) = \lambda Q_{t-1}(a) + (1-\lambda)\kappa + \zeta_t(a) \qquad \zeta_t(a) \sim \mathcal{N}(0, \sigma_\zeta)$$  
+>     - where $\lambda$ is a decay parameter and $\kappa$ a convergence point 
+> - Solutions for stationary bandits will likely not work well here
+
+
+<!--
+World is often non-stationary:
+- Take for example, restaurants. They change chefs, service staff, quality of ingredients might change depending on the season, owners change and the list goes on. 
+- Hence, we should allow for the possibility that our experience would change over time and it would  make sense to sometimes revisit restaurants in which our experiences were less than optimal
+- THINKING TIME!
+- think of another decision making example where you think relevant variables change over time
+
+Nonstationary bandits are often called restless bandits.
+
+Simple gaussian process
+- Here its an ornstein-uhlenbeck process
+- decay ensures that means stay closer to the center (kappa) than in pure random walk
+- Note that there are two sources of variability in this process: 
+  - the observation variance reflecting the extent to which rewards vary around their mean, and 
+  - the innovation variance, reflecting the volatility of the environment
+
+Other options for a non-stationary process?
+- THINKING TIME!
+- Try to come up with a non-stationary process that you think would fit well the example you have thought of?
+- Another popular example that fits bernoulli bandits well is a change point process, where probabilities of arms discontinuously jump at certain periods, where jump probability is either fixed or governed by another process (e.g. depending on the horizon)
+
+NOTE: These processes might look unstructured/random, but process actually could be structured. If you simply don't observe all the influences, don't have access to all the relevant data, potentially these influences could still result in something that closely resembles a random walk process. If you can observe the influences, the process can become stationary and this setup would be well descirbed as a contextual bandit problem.
+
+Stationary bandit solutions likely wont work well
+- THINKING TIME!
+- why not? 
+- learning/update process we have discussed so far assumes stationarity, that there is a point to which the learning would converge to
+- in other words, they weight all past observations equally
+- however, in a non-stationary process past observations become obsolete and hence should be forgotten
+- the main problem is then how they should be forgotten, at what rate etc
+
+-->
+----
+
+
+## Ornstein-Uhlenbeck process
+
+\center
+\includegraphics[width=0.9\textwidth]{figs/SK_2015_randomwalk.pdf}
+
+\source{Speekenbrink \& Konstantinidis (2015)}
+
+<!-- 
+This is an example from such a process. Here they were changing volatility in regular intervals, adding trends for certain arms
+-->
+----
+
+
+## Learning gets more complex
+
+> - It is essential to capture the nature of the process well  
+> - For this particular process there is an optimal Bayesian inference algorithm called [Kalman filter](https://en.wikipedia.org/wiki/Kalman_filter) (Kalman, 1960): $$\hat{Q}_{t+1}(a) = \hat{Q}_t(a) + \delta_t(a)K_t(a) [r_t - \hat{Q}_t(a)]$$  
+>     - where $\delta_t(a)$ is an indicator that arm $a$ was chosen, while "Kalman gain" term $K_t(a)$ acts as a learning rate $$K_t(a) = \frac{U_t(a) + \sigma^2_\zeta}{U_t(a) + \sigma^2_\zeta + \sigma^2_\epsilon}$$   
+>     - $U_t(a)$ is the variance of the posterior distribution of action value, updated as $U_{t+1}(a) = [1 - \delta_t(a) K_t(a)][U_t(a) + \sigma^2_\zeta]$
+>     - $\hat{Q}_0(a)$ and $U_0(a)$ have to be initialized  
+> - Easily combined with UCB or TS, e.g. for UCB: $a_t = \textrm{argmax}_{a \in \mathcal{A}}  \hat{Q}_t(a) + \beta\sqrt{U_t(a)}$  
+>     - where $\beta$ is a free parameter, a weight on uncertainty  
+> - Other options: sliding-window or discounting UCB (Kocsis & Szepesvári, 2006; Garivier & Moulines, 2011; Auer et al., 2019)  
+
+
+
+<!-- 
+Kalman filters
+- A common application is for guidance, navigation, and control of vehicles, particularly aircraft, spacecraft and dynamically positioned ships.
+
+Thomspon sampling version
+- \hat{Q}_t(a) and U_t(a) are mean and variance of a Normal distribution from which you can draw samples 
+
+Important sidenote: 
+- Kalman filters are often used in optimal control theory and partially observable markov decision processes (POMDP) settings 
+- E.g. airplanes cannot use current observations to track the position
+- In robotics we have a similar situation, robot cannot be completely certain about its position given its noisy sensors, so it estimates its position or distance to objects given the observations
+- In optimal control theory this is a frequent assumption and usually it requires constraining yourself to linear modelling
+- This is simultaenously the essential difference between OCT and RL, they focus on optimal solutions but that usually leads them to more constrained algorithms
+- In RL this is sometimes called agent constructed state
+
+-->
+----
+
+
+## Tracking uncertainty (correctly) is paramount
+. . . 
+
+\center
+\includegraphics[width=\textwidth]{figs/SK_2015_kalman.pdf}
+
+\source{Speekenbrink \& Konstantinidis (2015)}
+
+
+<!-- 
+
+You can see that if your estimate of uncertainty is off, you will err quite a bit.
+- If you misestimate it you might end up missing out some arms overcoming your current best arm 
+- Here it depends on you assumption about innovation variance - thats what governs the increase of uncertainty when you dont sample an arm.
+- Its a free parameter that you have to determine
+
+-->
+----
+
+
+
+## Remarks
+
+. . . 
+
+> - These are more realistic, but theoretically challenging problems  
+>     - Even when you know the process perfectly  
+>     - Difficult to derive meaningful regret guarantees (Ortner et al., 2012)
+> - There are some optimal solutions    
+>     - E.g. Whittle, 1988; Papadimitriou & Tsitsiklis, 1999  
+>     - But they tend to have stringent assumptions   
+>     - E.g. change is allowed only for the arm you are observing  
+> - If environment is indeed non-stationary  
+>     - It will usually be difficult to model it correctly  
+>     - And algorithms are not easy to tune  
+> - If you can potentially gather observations that underlie the process, you might be better off switching to a contextual bandit formulation  
+
+
+<!-- 
+
+If environment is indeed non-stationary 
+- this is one particular variant of restless bandits and one approach to solving them
+- in general learning will have to customized to the setup you wish to model and usually it will be complex
+- often they are not easy to tune - how do you set up
+
+-->
+----
+
+
+
+# Adversarial bandits
+
+
+## Formulation
+
+> - In "real-world" problems ...
+>     - hard to argue rewards are randomly generated  
+>     - sequences of rewards might be correlated   
+>     - in extreme, rewards could be generated by adversaries
+
+> - Adversarial bandit  
+>     - Assumes almost nothing about what generates rewards  
+>     - But keeps a (stationary) idea of a single best action
+
+> - Arbitrary sequence of rewards for each arm are generated before the game begins, with a constraint that they are from a bounded real interval, $r_1, r_2, ..., r_t \in [0,1]^A$    
+> - Goal is to design a policy $\pi$ that keeps the regret small no matter the sequence of rewards  
+
+> - Performance measure with a *weak regret*: $$L_T(\pi) = \max_a \sum^T_{t=1} r_t(a) - E[\sum^T_{t=1} r_t(a_t)]$$
+
+
+<!-- 
+
+Cons of stochastic setting 
+- difficult to find a prob distribution that can accurately represent the problem
+- all this would make a complex stochastic model
+- THINKING TIME!
+- try to think of a real world bandit problem where rewards would have some of these properties
+- choosing a route for transmitting packets between two points in a communication network (finite routes and cost is reward)
+- advertising setup where some users have ad blockers
+- stock trading
+
+Alternative is to assume the worst, that rewards could be generated in a worst possible way
+- if you set one policy, rewards will conspire against you to make your performance as bad as possible
+
+- arbitrary sequence!
+  - since rewards can be anything assuming stochasticity would not lend any generality
+- before the game begins
+  - hence, essentially deterministic game
+- deterministic setting 
+  - in other words, there is no uncertainty - so there is no need to estimate unknown parameters of any probability distribution, or to compute a posterior, because there is no probability distribution.
+- Why bounded interval?
+  - otherwise you could suffer infinite cost in the first round and never recover
+
+goal of small regret
+- in other words, is there a policy with sublinear regret?
+- THINKING TIME! a bit more time probably
+- what would be the worst possible regret of a deterministic policy?
+  - worst regret is equal to max, T!
+  - assume a deterministic policy (say choose action 1 dozen times, and action 3 rest of the time) 
+  - to prove that worst regret is T, we can design rewards by querying a policy, since it gives deterministic answers, we can set 0 exactly there and 1 everywhere else
+  - hence, randomized policies are guaranteed to have better regret
+
+weak regret
+- god's goal is to maximize the players weak regret - the difference between amount the bandit could have won if he simply chose the best slot machine to play from the beginning, and the amount he actually won
+- this differs from a more stringent total regret formulation, where god's goal is to maximize total regret - the difference between what the bandit could have won if he chose the best strategy and what he actually did win
+- expectation is due to randomized policy
+  - if policy is random, actions are random and hence rewards as well
+
+-->
+----
+
+
+## Exponential-weight algorithm for Exploration and Exploitation (Exp3)
+. . . 
+
+> -  Originally proposed by [Auer, Cesa-Bianchi, Freund & Schapire (2001)](http://cseweb.ucsd.edu/~yfreund/papers/bandits.pdf)
+
+> - Given $\gamma \in [0,1]$, initialize the weights $w_1(a) = 1$ for $a = 1, \dots, K$.
+> - In each round $t = 1,2, \dots$
+>     1. Set $p_t(a) = (1-\gamma)\frac{w_t(a)}{\sum_{a'=1}^K w_t(a')} + \frac{\gamma}{K}$ for each $a$  
+>     2. Sample action $a_t \sim p_t(a)$ and observe reward $r_t(a_t) \in [0,1]$  
+>     3. For $a=1,\dots,K$ set:  
+>         + estimated action values to $\hat{Q}_t(a) = r_t(a)/p_t(a)$ if $a=a_t$, 0 otherwise   
+>         + and weights to $w_{t+1}(a) = w_t(a) e^{\gamma \hat{Q}_t(a)/K}$
+
+> - Upper bound on the weak regret: $L_T(\textrm{Exp3}) \le (e-1)\gamma G_{\textrm{max}}(T) + \frac{K\log K}{\gamma}$
+
+<!-- 
+
+- a bit mysterious where does this come from  
+- lets see what this algo does
+
+- ALGO
+  - in round one probabilities are set to uniform
+  - \gamma plays similar role as \epsilon in eGreedy
+      - for large gamma probabilities become more uniform
+  - r_t/p_t 
+      - importance sampling estimator
+      - estimate increases if observed reward is higher than probability
+      - note that estimates are random since policy is random
+  - if arm was not chosen
+      - \hat{Q}_t(A) = 0
+      - and weight stays the same, w_{t+1}(a) = w_t(a)
+      - but probabilities decrease due to softmax
+  - why such form for computing probabilities?
+      - there are many ways, here we use exponential weighting scheme
+      - advantage is that it allows the algorithm to quickly increase the probability of outstanding actions, while quickly reducing the probability of poor ones (exponential growth!)
+      - This may be especially beneficial if the action-set is large
+  - instead of \gamma you could have a temperature like parameter in the exponent
+
+regret
+- Gmax is cumulative rewards of optimal actions in each round (left part of weak regret), unknown quantity ahead of time, not really smth that agent can max
+- role of \gamma: 
+  - in the first term, having a large \gamma will result in a poor upper bound because it occurs in the numerator - too much exploration means not enough exploitation. 
+  - but it occurs in the denominator of the second term, meaning that not enough exploration can also produce an undesirably large regret. 
+
+- achieves regret that is almost as small as in the stochastic setting
+    - more precisely, worst-case regret for adversarial problems is lower bounded by the worst-case regret on stochastic problems
+- how is this possible? 
+- No environment can simultaneously generate large rewards for some actions and prevent a learner to detect which action these large rewards are associated with. 
+- This is because the rewards are bounded and hence a large total reward means that the reward of the action has to be large often enough, which makes it relatively easy for a learner to identify the action with such large rewards
+
+
+-->
+----
+
+
+## Performance illustrations
+. . .
+
+- For an example on real world trading data, see a [blog post](https://jeremykun.com/2013/12/09/bandits-and-stocks/): UCB1 fares better than Exp3  
+
+. . . 
+
+\center
+\includegraphics[width=\textwidth]{figs/seldin_2014.pdf}
+
+\source{Seldin \& Slivkins (2014)}
+
+<!-- 
+
+- set of Bernoulli bandit problems
+- TS wins the day
+- BUT, Exp3 family can work equally well as UCB, while warding off adversarial attacks!
+
+-->
+----
+
+
+
+## Remarks
+. . . 
+
+> - Game theory view:  
+>     - It's fundamentally a game with two players - the *bandit* and *god*   
+>     - Best hope is to reduce the advantage that god's intelligence provides  
+>     - Hence, randomize - not even omniscient opponents can predict that  
+
+> - A bit too extreme, should be called *paranoid* bandit    
+>     - Real world payoffs are almost never entirely adversarial  
+>     - But guarantees and performance show that we don't lose much by still using the Exp3  
+
+<!-- 
+
+Deterministic setting
+- can be thought of as a game between two players
+
+-->
+----
+
+
+
+
+# Applications: A/B testing
+
+<!-- 
+A user experience research methodology.
+Term was coined in web-based companies where they sought a way to more formally test website designs to improve user experience or max their revenues.
+
+Terminology aside, its randomized control trial where you apply a statistical hypothesis test at the end to identify which condition is better.
+
+However, same problem comes in many guises and classical A/B testing approaches have been used in many ways. MABs are an exciting alternative approach and we here will see why.
+-->
+
+
+## Version of a website that max interaction
+
+\center
+\includegraphics[width=\textwidth]{figs/ABtesting.png}
+
+\source{\href{https://en.wikipedia.org/wiki/A/B_testing}{Wikipedia}}
+
+<!-- 
+
+what do companies want
+- customer engagement with the content
+- clicking on buttons provide a measure of activity
+- though there are other ways to go about it
+  - tracking a mouse cursor
+  - eye tracking
+  - more complex
+- google, facebook & co run
+
+the problem
+- how to design the website
+- iteratively, making small improvements and testing them
+-->
+----
+
+
+
+## Displaying ads most likely to be clicked
+
+\center
+\includegraphics[width=0.4\textwidth]{figs/freestyle2.jpg}\hspace{5mm}\includegraphics[width=0.4\textwidth]{figs/advantage2.jpg}
+
+\includegraphics[width=0.4\textwidth]{figs/ergodoxez.jpg}\hspace{5mm}\includegraphics[width=0.4\textwidth]{figs/KeyMouse.png}
+
+\source{Me, buying a keyboard to alleviate my wrist pain :)}
+
+<!-- 
+
+E.g. if you are buying a keyboard to alleviate your wrist pain
+- ads about ergonomic keyboards would sprout up everywhere and follow you around  
+
+what do companies want
+- company that is advertising want as much as sales as possible, i.e. they want to max clicks  
+- intermediary like criteo wants the same thing as they get % based on clicks  
+
+the problem
+- which ad to show you on a website that will attract your attention, make you want to click on an ad and potentially buy a product
+-->
+----
+
+
+
+## Choosing frontpage stories most likely to be read 
+
+\center
+\includegraphics[width=\textwidth]{figs/theguardian.pdf}
+
+\source{\href{https://www.theguardian.com/uk}{theguardian.com, May 6, 2020}}
+
+
+<!-- 
+
+what do companies want  
+- The Guardian want to max reading, their goal is to provide content readers will engage with
+- happy customers will buy a subscription or donate money
+
+problem
+- stories are numerous, which ones will we show on a frontpage
+- which one will we display in a bigger size than the others
+
+-->
+----
+
+
+## Choosing a political ad that attracts the voters (and $)
+
+\center
+\includegraphics[height=0.45\textheight]{figs/Obama_Homepage_original.png}\hspace{5mm}
+\includegraphics[height=0.45\textheight]{figs/Obama_winner.png}
+
+\source{\href{https://web.archive.org/web/20200506123512/https://blog.optimizely.com/2010/11/29/how-obama-raised-60-million-by-running-a-simple-experiment/}{Optimizely Blog, retrieved May 6, 2020}}
+
+
+<!-- 
+
+what do politicians want  
+- donations!
+
+note
+- you see where this goes, once you start thinking, I promise you'll see bandits everywhere
+- all of these examples could be converted to a contextual bandit problem
+
+-->
+----
+
+
+## Classical hypothesis testing approach
+. . . 
+
+- Randomized controlled trial aka experiment:  
+    - Assign $N$ users randomly to conditions A and B (e.g. default and new website design)   
+    - Measure clicks and perform a statistical test (e.g. for $\text{CTR}_B - \text{CTR}_A > 0$, perform a Fisher's exact test)   
+    - If $p < 0.05$, then switch to B 
+    - Ideally: do a proper power analysis to determine $N$ and no peeking before the end of experiment 
+
+. . . 
+
+- Web-based companies run these all the time
+    - Various measures: time spent on a page, click-through rates, conversion to sale etc  
+    - On a small portion of the traffic, users unaware  
+    - In tools like Google Analytics, Google Website optimizer  
+
+. . . 
+
+- Limitations:  
+    - You have to expose users to potentially bad outcomes  
+    - Difficult to scale to many conditions   
+    - Power analysis is tricky    
+
+. . . 
+
+- Equal to Epsilon First algorithm: explore randomly for a finite number of plays and exploit forever after  
+
+<!-- 
+
+Experiments!
+- in case you don't know much about experiments and rationale behind them
+- random assignment breaks connections to all other factors, only the fact that the user was in one condition vs other matters for the outcome
+- prevents issues like self-selection, omitted variable bias
+- i.e. all assumptions for identifying causal effect are satisfied
+- e.g. for economists here, standard regression assumptions are satisfied
+- this is why its often called a gold standard in science
+- I'll assume you all know what is a statistical test, p-values etc
+- THINKING TIME!
+- why is peeking, i.e. doing a statistical test repeatedly a bad idea?
+    - more precisely, multiple tests and stopping when you get significant one is a bad idea
+    - you increase false positive rate - so-called multiple hypothesis testing problem 
+    - see: https://www.evanmiller.org/how-not-to-run-an-ab-test.html
+
+limitations
+- THINKING TIME!
+- can you see some potential limitations?
+    - experiments dont have the objective of max rewards, which doesn't align well with companies' interests
+    - this is very clear if you think of clinical trials, you assign people to test drugs that are potentially dangerous - indeed, many people die each year in such trials  
+    - doesn't scale that well with number of conditions
+    - 
+-->
+----
+
+
+## Multi-armed bandit approach
+. . . 
+
+- Conditions, i.e. looks, buttons, ads, news articles - arms of the bandit  
+- Clicks on buttons, ads, news articles can be thought of as rewards  
+- Since $r_t \in \{0,1\}$, this is a Bernoulli bandit    
+- Each condition has true probability of being clicked $\theta(a)$
+
+. . . 
+
+- Instead of assigning users randomly to experimental conditions, bandit algorithm dynamically adapts assignment of users    
+- Main idea is that bandit approach will result in less time spent in bad conditions and scale better 
+
+. . . 
+
+- This can have big business impact, clicks missed out due to more users in bad conditions can result in a loss of revenue   
+
+<!-- 
+
+some additional advantages: 
+- scales much better
+- no issue with determining sizes
+- less organizational overhead - algo automatically tunes everything
+
+-->
+----
+
+
+## Which bandit algorithm?
+. . . 
+
+> - Choice will depend a bit on exact setting  
+> - Overall, setup fits very well Bayesian bandits  
+> - Optimal Bayesian learning with Beta-Bernoulli model    
+
+> - This calls for a Thompson sampling algorithm  
+> - But there is also a UCB tuned for Bernoulli bandits (Langford, 2005): $$\frac{k}{m} + \sqrt{\frac{2\frac{k}{m}\log \frac{1}{\delta}}{m}} + \frac{2\log \frac{1}{\delta}}{m}, \quad \delta=\sqrt{\frac{1}{t}}$$    
+>     - $k$ is total reward (number of clicks), $m$ number of times the arm has been selected     
+
+> - Practical considerations:  
+>     - Expensive to constantly train the models  
+>     - Instead, make bunch of choices, collect rewards and re-train after a while  
+>     - Deterministic models are not a good idea in this setting  
+
+<!-- 
+
+Model probably fits realistic scenario fairly well, and priors cannot hurt much
+- THINKING TIME!
+- what are possible reasons against a Beta-Bernoulli model?
+- in the frontpage news stories, for example, bandit is probably not a stationary one - with time the story becomes "stale", people know about it and true probability of being clicked goes down
+- THINKING TIME!
+- how could you leverage priors, make them more informative?
+- take for instance frontpage news stories example?
+- editors could assign prior based on their professional opinion
+
+UCB
+- k/m is essentially estimated probability of click
+- A tight upper bound based on Chernoff's bound 
+
+Practical considerations
+- THINKING TIME!
+- having these practical considerations in mind, which one would you  prefer, UCB or TS? more importantly, why?
+- deterministic algos like UCB would make same choices with a fixed estimates, not good for the customers, but also not good for updating the model  
+- adding some noise on top of UCB is not a good idea, going back to the linear regret!
+- TS randomizes, but still explores in a meaningful way, so when the training time comes, you will be able to get much better estimates as well
+-->
+----
+
+
+## What can research tell us which algo to choose?
+. . . 
+
+\center
+\includegraphics[width=0.9\textwidth]{figs/chapelleli_2011_fig1.pdf}
+
+\source{Chapelle \& Li (2011)}
+
+<!-- 
+Lower bound is due to Lai Robbins 1985
+- you only use KL divergence formula for bernoulli distribution
+
+Note the logartihmic scale for time
+- hence linearity means logarithmic regret
+- slope is what matters, TS achieves the same slope as ALB
+
+So performance wise, TS also wins the day
+-->
+----
+
+
+## Some ethical dilemmas as well
+
+\center
+\includegraphics[width=\textwidth]{figs/dilbert_ab.pdf}
+
+\source{\href{https://dilbert.com}{Dilbert}}

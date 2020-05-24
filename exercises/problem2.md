@@ -32,4 +32,4 @@ There should be four figures in total, one for each computational experiment, wi
 
 Don't hesitate to send me a message if anything is unclear.
 
-Deadline is **May 17, 23:59 BCN time**
+Deadline is **May 24, 23:59 BCN time**

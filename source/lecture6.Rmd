@@ -1,0 +1,867 @@
+---
+title: "Lecture 6: Bayesian optimization and contextual bandits applications"
+author: "Hrvoje Stojic"
+date: "May 22, 2020"
+header-includes:
+   - \usepackage[absolute,overlay]{textpos}
+   - \setbeamercolor{framesource}{fg=gray}
+   - \setbeamerfont{framesource}{size=\tiny}
+   - \newcommand{\source}[1]{\begin{textblock*}{8cm}(0.5cm,8.9cm)\begin{beamercolorbox}[ht=0.5cm,left]{framesource}\usebeamerfont{framesource}\usebeamercolor[fg]{framesource} Source:~{#1}\end{beamercolorbox}\end{textblock*}}
+   - \usepackage{hyperref}
+   - \usepackage{xcolor}
+   - \hypersetup{colorlinks,linkcolor={red!50!black},citecolor={blue!50!black},urlcolor={blue!80!black}}
+output: 
+  beamer_presentation:
+    theme: "boxes"
+    colortheme: "default"
+    fonttheme: "professionalfonts"
+    highlight: kate
+    slide_level: 2
+---
+
+
+```{r, knitr_options, include=FALSE}
+    
+    # loading in required packages
+    if (!require("knitr")) install.packages("knitr"); library(knitr)
+    if (!require("rmarkdown")) install.packages("rmarkdown"); library(rmarkdown)
+
+    # some useful global defaults
+    opts_chunk$set(warning=FALSE, message=FALSE, include=TRUE, echo=TRUE, cache=TRUE, cache.comments=FALSE, comment='##')
+
+    # output specific defaults
+    output <- opts_knit$get("rmarkdown.pandoc.to")
+    if (output=="html") opts_chunk$set(fig.width=10, fig.height=5)
+    if (output=="latex") opts_chunk$set(fig.width=6,  fig.height=4, 
+        dev = 'cairo_pdf', dev.args=list(family="Arial"))
+    
+```
+
+
+```{r, Setup_and_Loading_Data, echo=FALSE}
+   
+    # cleaning before starting
+    # rm(list = ls())
+
+    # setwd("/home/hstojic/Teaching/BGSE_DS_StochModOptim/source")
+
+    # rmarkdown::render("session4.Rmd", clean=TRUE, output_dir = "../handouts")
+   
+
+```
+
+
+# Bayesian optimization
+
+## Bayesian optimization with GP's 
+. . . 
+
+
+\center
+\includegraphics[height=0.8\textheight]{figs/Shahriari_2016_fig1.pdf}
+
+\source{Shahriari et al 2016}
+
+
+<!-- 
+
+You have seen this figure already.
+
+Now we have a Bayesian model that can give us posterior predictive distribution over any point given some training points - Gaussian process regression that we have discussed in the previous lecture. Just as a reminder, GP pposterior is illustrated here with full black line (mean) and blue region (uncertainty, 2 SD).
+
+Now we can employ familiar strategies for trading off exploration and exploitation - combining mean rewards with uncertainty around it. This is illustrated with the "acquisition function" in green. UCB is one of the popular choices here, but there are others as well. 
+
+Describe the figure!
+- we want to learn an unknown function, but also to maximize it
+- arms could be discrete points in the input space, but could be also continuous (like in hyperpar optimization example)
+- result is that we identify optimal arm more quickly because of generalization and smart exploration
+
+THINKING TIME
+- how would you sample points if you wanted to learn the function instead?
+    - go for max uncertainty always, right?
+    - you get active learning for free!
+    - (e.g. for decising which point to collect to label it and improve your classifier)
+- also illustrates why should always ask questions in classes :)
+
+THINKING TIME
+- to find a max there do you need to know the function perfectly well?
+    - no, its enough to know it in regions that pay off well
+    - GP will typically be uncertain about regions that yield poor rewards 
+    - major difference from supervised learning (and active learning)
+
+-->
+----
+
+
+## Bayesian optimization algorithm
+. . . 
+
+1. **for** $t=1,2, \dots$ do
+2.   Choose $\mathbf{x}_t$ by combining attributes of the posterior distribution in an acquisition function $\alpha$ and maximizing $$\mathbf{x}_t = \textrm{argmax}_x \alpha(\mathbf{x};\mathcal{D}_{1:t-1})$$  
+3.   Obtain the reward (i.e. outcome of the objective function) $$y_t = f(\mathbf{x}_t) + \epsilon_t$$  
+4.   Augment the data $\mathcal{D}_{1:t} = {\mathcal{D}_{1:t-1}, (\mathbf{x}_t,y_t)}$ and update the GP
+5. **end for**
+
+. . . 
+
+- Some acquisition functions $\alpha$: UCB, Thompson sampling, Expected improvement, Probability of improvement, Entropy search, Predictive entropy search, Portfolios of acquisition functions (Hedge, Entropy search portfolio)  
+
+. . . 
+
+- A bit of history: searching for gold with ["kriging"](https://en.wikipedia.org/wiki/Kriging)
+
+<!-- 
+
+same as all other algorithms for bandit problems
+- observe context and arms, make a choice
+- observe reward, update your model (action values, function)
+
+acq fnc
+- note a piece of terminology in BO - they dont call them policies, acq fnc instead
+- should be easy to do compared to the orig problem
+- tend to pick the same points, but there are some interesting differences between them and there are interesting ideas on combining them
+- we will next go over several examples
+- also known as infill, figure of merit, expected utility
+- figure of merit comes from optimal experiment design literature
+- THINKING TIME
+- now, what is the relation between BO and designing experiments? think about what do you do when you are designing an experiment?
+    - you are "designing" an arm (features of x) that would allow you to learn as much as possible about the system you are studying
+    - you run the experiment and find about the outcome
+    - same as active learning!
+    - you now also have a tool for optimal experimental design!
+
+history
+- mining applications, krigging (south african engineer - invented this technicque during his mater thesis)
+- expensive evaluation
+- https://en.wikipedia.org/wiki/Kriging
+-->
+
+
+
+## Upper confidence bound (UCB)
+. . . 
+
+- Recall the expressions for GP prediction $$P(y_{t+1}|\mathcal{D}_{1:t},\mathbf{x}_{t+1} = \mathcal{N}(\mu_t(\mathbf{x}_{t+1}), \sigma_t^2(\mathbf{x}_{t+1}) + \sigma_n^2)$$
+
+$$\mu_t(\mathbf{x}_{t+1}) = \mathbf{k}^T [K + \sigma_n^2I]^{-1} \mathbf{y}_{1:t}$$
+
+$$\sigma_t^2(\mathbf{x}_{t+1}) = k(\mathbf{x}_{t+1},\mathbf{x}_{t+1}) - \mathbf{k}^T [K + \sigma_n^2I]^{-1} \mathbf{k}$$
+
+. . . 
+
+- UCB acquisition function: $\mu_t(\mathbf{x}_t) + \beta_t \sigma_t(\mathbf{x}_t)$
+
+. . . 
+
+
+- Regret bound for RBF kernel: $\sqrt{T(\log T)^{d+1}}$ ([Srinivas et al., 2010](https://arxiv.org/abs/0912.3995)) 
+
+
+
+<!-- 
+same as all other algorithms for bandit problems
+- observe context and arms, make a choice
+- observe reward, update your model (action values, function)
+
+THINKING TIME
+- is this optimization problem hard?
+- we know the mean and variance function - its fixed by the GP! so not that hard
+- however, you might have noticed in our example that optimization surface is multi modal, and if you have continuous action space this creates problems
+- if you have such, more difficult setup, BO approach would pay off only if evaluating the function is expensive (i.e. you dont have a function, you can only sample it in a costly way)
+- like in historical mining example - drilling a hole and finding whether there is really gold or oil there costs a lot of money, say £1 mil
+- or optimizing hyperpars of a giant neural net that takes a week to train 
+- but not the case for say discretized ad serving space, where evaluation is also cheap 
+
+regret
+- Srinivas derived a sequence of beta's that result in sublinear cumulative regret in the stochastic setting
+- very important contribution, this has been an open problem for more than 50 years
+- they derived regret also for linear and matern kernel
+- usually you get a good performance with fixed beta
+- after this work a lot of new theoretical work emerged (e.g. exponentially vanishing simple regret bounds in the deterministic setting)
+
+next we will introduce more traditional improvement-based approaches that have roots in decision theory which economists among you might be more familiar with 
+
+-->
+----
+
+
+## Probability of Improvement (PI)
+. . . 
+
+- Favours points that are likely to improve on best so far
+- Defined as $$\textrm{PI}(\textbf{x}) = P(f(\textbf{x}) \ge \mu^+ + \epsilon) = \Phi\left( \frac{\mu_t(\textbf{x}) - \mu^+ - \epsilon}{\sigma_t(\textbf{x})} \right)$$ 
+    - where $\mu^+$ is the best observed value so far and $\epsilon$ is a free parameter  
+
+. . .
+
+\centering
+\includegraphics[width=0.45\textwidth]{figs/deFreitas_2013_PI.png}
+
+\source{\href{https://www.youtube.com/watch?v=vz3D36VXefI}{de Freitas lectures, 2013}}
+
+
+<!-- 
+everything is a bit clearer with a picture, so lets explain this through a picture below
+- mu^+ is the best observed value so far 
+- fmax = mu^+ + zeta
+- then, for each point on our function estimated with a GP, we have a predictive posterior, centered at the line (x1 and x2)
+- we can analytically compute this because we know this is a Gaussian
+- now, looking at x2, we can compute the area under the curve that is higher than fmax, this gives us the prob of being higher than fmax!
+- given that this is a Gaussian, we can compute this exactly, Phi stands for cumulative normal distribution, available in all stat software libraries
+- finally, we want to optimize x, for that we simply evaluate this expression for all points (prob discretized) and choose the max
+
+role of zeta?
+- free parameter for balancing exploration and exploitation, larger it is more exploration there is
+- has to be set to something small at least, for taking care of situations where mu+ is way higher of a point, such that there is miniscule mass there - it would be a problem to evaluate it numerically (this is for point x1)
+
+notes
+- PI not used that often, in general the heuristic used for an unknown target (using current best) causes PI to exploit quite aggressively
+- but, it can be really good if you happen to know what is the best possible outcome
+- we will also see later on it can be used for safe exploration
+- one serious negative property of PI is that all improvements are treated equally, regardless of the amount of improvement 
+    - if you know a bit of expected utility theory you know that this is not sensible 
+    - you should integrate likelihoods of outcomes with their utilities
+    - this is a segway to our next acquisition function - expected improvement
+
+-->
+----
+
+
+
+## Expected Improvement (EI)
+. . . 
+
+- Improves over PI by incorporating the amount of improvement 
+- Expected utility approach $$\textbf{x}_{t+1} = \textrm{argmin}_{\textbf{x}} \int \lVert f_{t+1}(\textbf{x}) - f(\textbf{x}^*)\rVert P(f_{t+1}|\mathcal{D}_t) df_{t+1}$$
+
+. . . 
+
+- True objective at the max is not available, [Mockus (1991)](https://doi.org/10.1007/BF00940509) proposed the expected improvement approximation $\textrm{EI}(\textbf{x}) = \mathbb{E} \left[ \max \left\{0, f(\textbf{x}) - \mu^+  - \epsilon\right\}|\mathcal{D}_t \right]$ 
+
+. . .
+
+- We can obtain an analytical expression with the GP $$\textrm{EI}(\textbf{x}) = (\mu_t(\textbf{x}) - \mu^+ - \epsilon) \Phi(Z) + \sigma_t(\textbf{x})\phi(Z)$$
+    - when $\sigma_t > 0$, $0$ if $\sigma_t = 0$
+    - where $Z = \frac{\mu_t(\textbf{x}) - \mu^+ - \epsilon}{\sigma_t(\textbf{x})}$
+
+. . .
+
+- EI is high when the (posterior) expected value $\mu_t(\textbf{x})$ is higher than the current best value $\mu^+$; or when the uncertainty $\sigma_t(\textbf{x})$ around the point $\textbf{x}$ is high.
+
+<!-- 
+
+Expected utility approach
+- we integrate distance between possible function value and optimal function value, marginalizing out possible functions
+- we want to find such x for which this expectation would be min
+- the problem is that we dont know the true objective at the max x
+
+EI
+- max operator is there bcs this will be computed only if there is improvement
+- i.e. only if f(x) is bigger than current best mu+
+- epsilon is the same parameter as in PI
+- Phi and phi are the cumulative distribution and probability density function of the (multivariate) standard normal distribution
+
+Intuitively, this makes sense. If we maximize the expected improvement, we will either sample from points for which we expect a higher value of $f$
+, or points in a region of $f$ we haven’t explored yet ($\sigma(\textbf{x})$ is high). In other words, it trades off exploitation versus exploration.
+
+-->
+----
+
+
+## Acquisition function illustration 
+
+\centering
+\includegraphics[width=0.85\textwidth]{figs/Shahriari_2016_fig5.pdf}
+
+\source{Shahriari et al (2016) Figure 5}
+
+<!-- 
+Methods do tend to give similar behaviour. You can see here that PI is the most aggressive one in terms of exploiting (around the best observed point).
+
+In contrast, the randomization in TS allows it to explore more aggressively. However, if you have cont action space there are some particular issues with TS, at least when combined with GP - to optimize x, you need to be able to fix a function sample from posterior, so that you can query it during the optimization - its not straightforward to fix a function sample, recent spectral sampling methods provided some traction here.
+
+PES is an information theory based acq function, selecting a point that is expected to cause the largest reduction in entropy of the distribution
+
+They don't seem to differ too much in this simple example - but they can yield important diffs in performance.
+-->
+----
+
+
+
+## Portfolio of acquisition functions
+. . . 
+
+\centering
+\includegraphics[width=0.9\textwidth]{figs/deFreitas_2013_portfolio.png}
+
+\source{Hoffman, Brochu, de Freitas (2011); Shahriari et al (2014)}
+
+<!-- 
+
+There are many acq fncs and their parameters. Moreover, it is reasonable to expect that no single acquisition strategy provides better performance over all problem instances. 
+
+Perhaps we can blend them all together? At each iteration, each strategy in the portfolio provides a candidate query point and meta-criterion is used to select the next query point among these candidates. The meta-criterion is analogous to an acquisition function at a higher level, optimized within the set of points recommended by the strategies. Early approach was based on Hedge algo, while more recently developed entropy search portfolio (ESP) uses information gain to take into account information gained through exporaiton.
+
+What the figure shows is that empirically different acq functions can be more suitable in different stages of the BO - more aggressive exploiter PI is being used more in later stages.
+- Branin-Ho and Hartmann are benchmark functions that are often used in BO articles
+-->
+----
+
+
+## Portfolios might be the best approach 
+
+\centering
+\includegraphics[width=0.45\textwidth]{figs/acqcomparison.png}
+
+\source{Shahriari et al (2016) Figure 6}
+
+<!-- 
+Empirical evaluation suggests portfolios might be better approach than committing to a single acq function.
+ -->
+----
+
+
+## Optimization: handling GP hyperparameters
+. . . 
+
+- In BO typically GP is updated in each iteration and hyperparameters are optimized again as well
+- This optimization most often involves multistarted quasi-Newton hill climbers using GP marginal likelihood
+
+. . . 
+
+- *Fully*-Bayesian treatment: marginalizing out the hyperparameters $$\alpha_t(\mathbf{x}) = \mathbb{E}_{\theta|\mathcal{D}_t}[\alpha(\mathbf{x}; \theta)] = \int \alpha(\mathbf{x}; \theta) P(\theta | \mathcal{D}_t ) d\theta$$
+
+. . . 
+
+- Takes into account uncertainty about GP's hyperparameters and tends to improve uncertainty estimates of the function 
+- This can be done using either quadrature or Monte Carlo estimate (e.g. via slice sampling - Murray & Adams, 2010) 
+
+
+<!-- 
+A GP with SE kernel with ARD would have D+3 hyperpars: constant mean, length scale for each dimension, sigma_f and sigma_n.
+
+Reminder, GP is updated in each iteration and hyperparameters are optimized again as well. This optimization most often uses the marginal likelihood (see previosu lecture), where multistarted quasi-Newton hill climbers (e.g. L-BFGS) is used to optimize it. This is independent of finding the best action, given the optimized GP model.
+
+better solution is to marginalize out hyperparameters, to account for uncertainty in hyperparameters
+- esentially, we blend multiple acquisition functions that arise under various GP hyperpars
+- if you are optimziing hyperpar of a giant neural net that you have to wait for a long time, then you might as well do this, comparatively takes little time
+
+note
+- optimizing hyperpars with only a few evaluation points is not a good practice
+- try to collect as many initial points as possible
+-->
+----
+
+
+## Optimization: handling GP hyperparameters
+
+- Example of marginalizing out the hyperparameters with EI
+
+\centering
+\includegraphics[width=0.45\textwidth]{figs/Snoek_2011_fig1.pdf}
+
+\source{Snoek et al (2012) Figure 1} 
+
+<!-- 
+(a) Three posterior samples are shown, each with different length scales, after the same five observations. 
+(b) Three expected improvement acquisition functions, with the same data and hyperparameters. The maximum of each is shown. 
+(c) The integrated expected improvement, with its maximum shown. You can see that it's roughly the sum of all three shapes above
+-->
+----
+
+
+
+## Optimization: acquisition functions 
+
+. . . 
+
+- Acquisition functions are often multi-modal
+- In continuous action spaces optimization is then not trivial  
+- Only useful if cheap relative to evaluating objective $f$ 
+
+. . . 
+
+- In practice: 
+    + Discretization and grid search (e.g. Snoek et al 2012)  
+    + Adaptive grids (Badernet, Kegl, 2010)
+    + If gradients available (or can be approximated cheaply), then multi-started quasi-Newton hill climbing approach or multi-started local search 
+    + Difficult to asses the performance/convergence and its not clear whether assumptions for theoretical guarantees are met  
+
+. . . 
+
+- Recent developments  
+    + Optimistic optimization: Use the same optimism in the face of uncertainty on acquisition function optimization level as well (de Freitas, Smola and Zoghi, 2012)) 
+    + BamSOO: shrinks the region in every iteration to the most promising ones (Wang, Shakibi, Jin and de Freitas, 2014) 
+
+<!-- 
+Central step in BO is finding an optimal action, or optimal configuration of features x, if you have cont action space - e.g. as when optimizing hyperparameters.
+
+We will focus on more difficult, cont action space scenario.
+As you have seen so far, acq fnc yields optimiz surface that is multi-modal
+Not an easy task to find a max of such surface
+
+In practice, even if dealing with cont spaces we resort to discretization.
+
+Optimistic optimization
+- proposes to only search in regions where the upper bound on the objective is greater than the best lower bound encountered thus far
+- uses prob branch and bound concept (for those with CS background)
+
+BamSOO: Bayesian multiscale Simultaneous optimistic optimization
+- SOO is an alternative to BO, it sequentially build space-partitioning trees by splitting leaves with high function values or upper confidence bounds; the objective function is then evaluated at the center of the chosen leaves
+- bamSOO combines BO and SOO - has better theoretical guarantees that do not depend on the exact optimization of an acquisition function 
+- behaves similarly to Optimistic optimization
+
+These recent developments are best illustrated with a figure.
+-->
+----
+
+
+## Optimizing acquisition functions with optimistic optimization
+
+\centering
+\includegraphics[width=0.8\textwidth]{figs/Shahriari_2016_fig7.pdf}
+
+\source{de Freitas, Smola, Zoghi (2012)}
+
+<!-- 
+Conditioned on the unknown objective function (red) lying between the GP's confidence bounds (green region) with high probability, we can discard regions of the space where the upper confidence bound is lower than the best lower confidence bound encountered thus far. Querying those points makes no sense since even upper bound for those points is lower than the best lower confidence bound found so far. It is very unlikely that points in those discarded regions would prove to be better, but not guaranteed - thats why optimistic optimization.
+
+Hence, guided by the GP model, the most promising regions are explored first, which avoids covering the entire space. This makes the search far more efficient.
+
+Lets stop here and we will continue with several extensions, how to go further beyond the basic BO algorithm we have just described.
+-->
+----
+
+
+
+## Going further: Taking into account evaluation costs
+. . . 
+
+- In realistic settings, evaluating objective function might entail different costs for different $\mathbf{x}$ and you might have access to it
+    + E.g. training a neural network with 100 vs. 10000 nodes requires much more memory and would take linger time - you could use training duration as a cost, or cost of renting a larger cloud instance for a longer time
+- If there is a limited budget, then the search should be biased toward low-cost areas
+
+. . . 
+
+- Snoek et al (2012): *expected improvement per second*
+    + Duration function is also not known  
+    + $c(\mathbf{x}):\mathcal{X} \to R^{+}$
+    + We can use another GP model to estimate $c()$ 
+    + Combine the expected improvement with duration, $\textrm{EI}(\mathbf{x},\mathcal{D}_t)/c(\mathbf{x})$
+    + Biases the search toward good models with fast training times
+
+<!-- 
+
+-->
+----
+
+
+## Expected improvement per second 
+. . . 
+
+- Optimizing hyperparameters for training logistic regression on MNIST dataset
+
+. . . 
+
+\centering
+\includegraphics[width=0.95\textwidth]{figs/Snoek_2011_fig3.pdf}
+
+. . . 
+
+- Little difference in performance (approaching min) between EI MCMC and EI per second, but there is a large difference in amount of time it takes
+
+\source{Snoek et al (2012) Figure 3} 
+
+<!-- 
+On the left: GP EI MCMC (integrated EI) and GP EI per Second do not show much of a difference in optimizing hyperparamaters for training logistic regression on MNIST dataset. 
+
+However, on the right, you can see that these two approaches differ in terms of time elapsed.
+-->
+----
+
+
+
+## Going further: Safe exploration and risk-averse BO
+. . . 
+
+- In many applications there are outputs that you do not wish to experience 
+
+\centering
+\includegraphics[height=0.15\textheight]{figs/cliff.jpg}
+
+. . . 
+
+- We can leverage lower confidence bounds to avoid harm (SafeOpt algorithm; [Sui et al., 2015](http://www.jmlr.org/proceedings/papers/v37/sui15.pdf))
+
+\centering
+\includegraphics[height=0.25\textheight]{figs/sui_2015_fig1.pdf}
+
+. . . 
+
+- Related to this is risk-averse BO - accounting for the distribution tails (see [Torossian, Picheny and Durrande, 2020](https://arxiv.org/abs/2001.04833)) 
+
+<!-- 
+Examples
+- Examples include medical applications where patient comfort must be guaranteed, recommender systems aiming to avoid user dissatisfaction, and robotic control, where one seeks to avoid controls causing physical harm to the platform, or tuning a car engine where you do not wish to break the engine
+
+There are some specific issues here
+- hard to sample in extrpolation regions
+- difficult to guarantee reraching a global optimum
+- but you can “safely reachable” near-optimal decision
+- authors evaluate SAFEOPT on two real-world applications: movie recommendation, and therapeutic stimulation of patients with spinal cord injuries.
+-->
+----
+
+
+
+## Going further: Beyond low-dimensional problems with REMBO
+. . . 
+
+- In continuous action space, Bayesian optimization is
+restricted to problems of moderate dimension (approx 20) 
+- In practice, some dimension reduction can be done first
+- Random forests scale more easily (SMAC algorithm)
+
+. . . 
+
+- New approaches combining BO with random search
+    - Many problems have low effective dimensionality
+    - Rationale why random search sometimes performs well ([Bergstra, Bengio, 2012](http://www.jmlr.org/papers/v13/bergstra12a.html))
+    - Bayesian optimization with random embedding (REMBO; [Wang et al. 2013](https://www.aaai.org/ocs/index.php/IJCAI/IJCAI13/paper/viewPaper/6971))
+
+\centering
+\includegraphics[width=0.55\textwidth]{figs/Shahriari_2016_fig10.pdf}
+
+\source{Shahriari et al (2016) Figure 10} 
+
+<!-- 
+Why only 20 dims?
+- to ensure that a global optimum is found, we require good coverage of X, but as the dimensionality increases, the number of evaluations needed to cover X increases exponentially.
+- this is the usual curse of dimensionality
+
+Low manifolds and Random search 
+- E.g. changing certain hyperparemeter of a deep neural net does not change performance
+- why Random search performs well?
+- points sampled uniformly at random in each dimension can densely cover each low-dimensional subspace
+- such search can exploit low effective dimensionality without knowing which dimensions are important
+- figure 
+    - only has 1 important dimensions, but we do not know which of the two dimensions is the important one
+    - We can then perform optimization in the embedded 1-D subspace defined by x1=x2 since this is guaranteed to include the optimum
+
+REMBO
+- Bayesian optimization with random embedding 
+- first draws a random embedding (given by A) and then performs Bayesian
+optimization in this embedded space
+- take a look at the paper if you want to know more about this algo
+-->
+----
+
+
+
+## Going further: Parallelization
+. . . 
+
+- If we are concerned with wallclock time, there are several ways to speed up evaluation
+
+. . . 
+
+1. At decision time
+    + When using portfolios
+    + We could optimize in parallel many acquisition functions (or a single one with multiple exploration values)
+    
+. . . 
+
+2. While waiting for evaluation of the objective function  
+    + We could consider what $\mathbf{x}$ should be evaluated next 
+    + Snoek et al (2012) propose to compute MC estimates of the acquisition function under different possible results from pending function evaluations 
+    + With function like EI we can leverage Gaussian integration property
+
+<!-- 
+
+-->
+----
+
+
+
+## Addendum: Random forests as an alternative to GP 
+. . . 
+
+- Scale much better and can deal with categorical data
+- Variance in predictions can be used as uncertainty estimate 
+
+. . . 
+
+\centering
+\includegraphics[width=0.4\textwidth]{figs/Shahriari_2016_fig4.pdf}
+
+. . . 
+
+- Poor extrapolation behaviour, but in practice seems to work well (Hutter, Hoos, Leyton-Brown, 2011 - SMAC algorithm) 
+
+\source{Shahriari et al (2016) Figure 4} 
+
+<!-- 
+So far I really pushed GP's - are there any alternatives?
+
+First, any other proper Bayesian model would do, as long as you can obtain good estimates of uncertainty.
+
+What has been used sometimes as an alternative is random forest.
+- I'm sure you heard of these.
+- They are obviously a good model for learning functions, they can scale very well to large data sets, high dimensional inputs and can be parallelized
+
+For BO we need uncertainty estimates as well, to balance exploration and exploitation.
+- THINKING TIME
+- what can be used as an uncertainty estimate in RFs?
+    - variance in predictions between individual decision trees 
+- Problem is that it has very poor uncertainty representation when extrapolating (illusory confident) and predictions do not return to the prior
+- in practice it has been shown to work well - SMAC algorithm
+-->
+----
+
+
+## Addendum: Ensemble of neural networks
+. . . 
+
+- A collection of a finite number of neural networks is trained for the same task (Hansen & Salamon, 1990)
+- Variance in predictions can again be used as uncertainty estimate 
+- Recent work shows ensembles can represent uncertainty well, approaching GP's ([Lakshminarayanan, Pritzel, Blundell, 2017](http://papers.nips.cc/paper/7219-simple-and-scalable-predictive-uncertainty-estimation-using-deep-ensembles); [Pearce et al, 2019](https://arxiv.org/abs/1810.05546))
+
+. . . 
+
+\centering
+\includegraphics[width=0.4\textwidth]{figs/pearce_2019_fig1.pdf}
+
+. . . 
+
+- Can be a costly method and not there yet in terms of representing uncertainty, but very promising
+
+\source{Pearce et al (2019)} 
+
+<!-- 
+Another alternative are neural nets, more precisely, a bunch of them!
+
+Fairly old approach, basic idea is similar to random forest and bagging. The output of an ensemble is a weighted average of the outputs of each network, with the ensemble weights determined as a function of the relative error of each network determined in training. It does improve generalisation, same as with decision trees. The downside is that it is very costly to train, especially if you want to do it with deep neural nets.
+
+Recent reincarnation of ensemble of neural nets was shown to represent uncertainty fairly well.
+- started with Gal and Ghahramani who proposed using Monte Carlo dropout (MC-dropout) to estimate predictive uncertainty by using Dropout at test time. Dropout may be interpreted as ensemble model combination where the predictions are averaged over an ensemble of NNs 
+- Lakshminarayanan, Pritzel, Blundell (2017) - use a proper scoring rule as the training criteria, random initialization of the NN parameters, along with random shuffling of the data points was sufficient to obtain good performance in practice
+- Pearce etal 2019 - they use smth called randomised MAP sampling (RMS) which regularises parameters about values drawn from an anchor distribution
+
+Figure
+- An ensemble of NNs, starting from different initialisations and trained with the anchored ensembling, produce a predictive distribution approximating
+that of a GP. This improves with number of NNs.
+
+You might have heard of Bayesian NNs. They are often harder to implement and computationally slower to train compared to non-Bayesian NNs. Various approximations are usually needed, which impairs quality of uncertainty estimates. This is why I didn't explicitly talk about these here, but otherwise they are a good candidate as well.
+
+This is very much a frontier of the research. As far as I know noone yet tried ENN in BO setting. A really nice group project or a master thesis would be to compare say GP-UCB to ENN-UCB on some benchmark functions like Branin-Ho, Hartmann etc. Small ENN's would already scale much better than GP.
+-->
+----
+
+
+# Application: Optimizing hyperparameters
+
+
+## The problem 
+
+. . .
+
+- What are the hyperparameters and how do we optimize them?
+
+. . .
+
+> - Some examples:  
+>      + SVM: regularisation term C, kernel parameters  
+>      + Linear regression on big data: SGD learning rate, regularization parameter, mini batch size, number of epochs  
+>      + Three-layer convolutional neural network: SGD learning rate, number of epochs, 4 x weight costs (layers and softmax), width, scale and power (normalization on the pooling layers)   
+
+. . .
+
+> - Standard procedures  
+>      + Grid search  
+>      + Random Search
+
+. . .
+
+- Bayesian optimization as an alternative
+
+<!-- 
+What are the hyperpars?
+- THINKING TIME!
+- What are the hyperpars? How are they different than "normal" parameters? Try to provide a definition
+    - hyperparameters areparameters that govern the behavior of other parameters and/or determine their number
+- THINKING TIME!
+- now think of an algorithm example with hyperparameters, how exactly do those hyperpars affect behaviour of the algorithm?
+    - kNN: k determines the number of centroids in the data, constraints the functions that the model can learn
+    - DNN: number of layers affects number of parameters, richness of the model, family of functions DNN can model 
+
+What is the issue with optimizing hyperpars?
+- if they need an encouragement: say catgorization problem and model that can perfectly fit data, say kNN? how do you fit k?
+- what did you do so far? 
+- any kaggle competition?
+
+Examples (from Snoek et al)
+- SVM has a bit more than just C?
+- Online LDA (Hoffman et al 2010) uses variational bayes
+- this is a particular example, once you already set an architecture!
+
+(dis)advantages of the usual approaches
+- THINKING TIME!
+- try to think of several (dis)advantages of these usual approaches
+
+Disadvantages of the existing approaches?
+- can be very costly! 
+- training a complicated NN can last for days 
+- we want to reduce the number of evaluations!
+
+Advantages?
+- embarrassingly parallel and user friendly
+- trivial to submit 20*20*20 jobs to my cluster and just wait for them to finish
+- psych, you are not losing a job, automated statistician...Somehow I need to believe that I'm better than these algorithms at tuning hyperparameters
+
+
+Bayesian optimization algorithms  
+- We build a model of the optimization surface, how hyperparameter values are related to model performance, using a GP
+- ANd then we choose which set of hyperparameters to sample next using smart strategies for balancing exploration and exploitation
+- This makes sense only if this optimization problem is less costly than the original training
+- hence, we dont use it for models that are quick to train  
+
+-->
+
+----
+
+
+
+## Example 1: Tuning the SVM hyperparameters
+
+> -  20 dimensional problem, where the predictors are independent Gaussian random variables with mean zero and a variance of 9 (Sapp et al. 2014)
+
+> - training set: 250 data points 
+
+> - radial basis SVM to model the data  
+>     - two hyperparameters: regularization cost and radial basis parameter $\sigma$
+
+> - example: [Revolutionanalytics.com](http://blog.revolutionanalytics.com/2016/06/bayesian-optimization-of-machine-learning-models.html)
+>     + using kernlab and rBayesianOptimization
+
+----
+
+
+## Example 1: RMSE surface
+
+\center
+\includegraphics[width=0.65\textwidth]{figs/SVMsurface.png}
+
+<!-- 
+True RMSE surface, the darker the better - smaller RMSE
+-->
+----
+
+
+## Example 1: Random search
+
+\center
+\includegraphics[width=0.65\textwidth]{figs/SVMrandom.png}
+
+----
+
+
+## Example 1: GP predictive mean (based on initial random search)
+
+\center
+\includegraphics[width=0.65\textwidth]{figs/SVMgpmean.png}
+
+<!-- 
+The darker regions indicate smaller RMSE values given the current resampling results
+-->
+----
+
+
+## Example 1: GP predictive variance (based on initial random search)
+
+\center
+\includegraphics[width=0.65\textwidth]{figs/SVMgpvar.png}
+
+<!-- 
+The prediction noise becomes larger (e.g. darker) as we move away from the current set of observed values.
+-->
+----
+
+
+## Example 1: GP-UCB (based on initial random search)
+
+\center
+\includegraphics[width=0.65\textwidth]{figs/SVMucb.png}
+
+<!-- 
+Darker values indicate better conditions to explore. Since we know the true RMSE surface, we can see that the best region (the northwest) is estimated to be an interesting location to take the optimization. 
+-->
+----
+
+
+## Example 1: GP-UCB solution after 30 evaluations
+
+\center
+\includegraphics[width=0.65\textwidth]{figs/SVMbofinal.png}
+
+<!-- 
+The final settings were found at iteration 44 with a cost setting of 485,165,195 and sigma=0.0002043. I would have never thought to evaluate a cost parameter so large and the algorithm wants to make it even larger.
+-->
+----
+
+
+
+## Example 2: Tuning the Random forest hyperparameters
+
+> -  scikit-learn's moons dataset, two classes and two features (Sapp et al. 2014)
+
+> - two hyperparameters: 
+>     - number of Decision Trees we would like to have, 
+>     - the maximum depth for each of those decision trees
+
+> - example: [Distill](https://distill.pub/2020/bayesian-optimization/)
+
+----
+
+
+## Example 2: Dataset
+
+\center
+\includegraphics[width=0.8\textwidth]{figs/moons_dataset.png}
+
+<!-- 
+Classification problem
+-->
+----
+
+
+## Example 2: GP-UCB solution after 0 evaluations
+
+\center
+\includegraphics[width=0.9\textwidth]{figs/moons_iter0.png}
+
+<!-- 
+
+-->
+----
+
+
+## Example 2: GP-UCB solution after 3 evaluations
+
+\center
+\includegraphics[width=0.9\textwidth]{figs/moons_iter3.png}
+
+<!-- 
+
+-->
+----
+
+
+## Example 2: GP-UCB solution after 9 evaluations
+
+\center
+\includegraphics[width=0.9\textwidth]{figs/moons_iter9.png}
+
+<!-- 
+Illustrates problems with actions that are not really continuous - integers, rather than real numbers
+-->
+----
